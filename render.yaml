@@ -6,7 +6,9 @@ services:
     runtime: docker
     dockerfilePath: ./apps/server/Dockerfile
     dockerContext: .
-    plan: starter
+    # Free plan: sleeps after ~15 min with no players and takes ~1 min to wake.
+    # Upgrade to `starter` for always-on hosting before a public launch.
+    plan: free
     region: frankfurt
     healthCheckPath: /health
     autoDeploy: true
@@ -19,12 +21,8 @@ services:
         generateValue: true
       - key: ALLOWED_ORIGINS
         value: https://ozu.vercel.app
-      # Recommended for production: Supabase Postgres connection string (see supabase/migrations).
+      # Required on the free plan (no persistent disk): Supabase Postgres connection string.
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
         sync: false
-    disk:
-      name: ozu-data
-      mountPath: /data
-      sizeGB: 1
