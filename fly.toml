@@ -1,0 +1,28 @@
+# Alternative host: Fly.io (Johannesburg region is closest to Lagos).
+# fly launch --no-deploy --copy-config && fly secrets set GUEST_TOKEN_SECRET=... ADMIN_TOKEN=... && fly deploy
+app = "ozu-game-server"
+primary_region = "jnb"
+
+[build]
+  dockerfile = "apps/server/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "2567"
+  DATA_DIR = "/data"
+
+[http_service]
+  internal_port = 2567
+  force_https = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[mounts]
+  source = "ozu_data"
+  destination = "/data"

@@ -1,0 +1,14 @@
+{
+  "name": "ozu",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ozu — a multiplayer Lagos-inspired social-life simulation in the browser.",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "npm run dev -w @ozu/server & npm run dev -w @ozu/web",
+    "build": "npm run build -w @ozu/server && npm run build -w @ozu/web",
+    "test": "npm run test -w @ozu/server",
+    "typecheck": "npm run typecheck -w @ozu/server && npm run typecheck -w @ozu/web"
+  },
+  "engines": { "node": ">=20" }
+}

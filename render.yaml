@@ -1,0 +1,30 @@
+# Render Blueprint for the Ozu game server (WebSockets supported).
+# Deploy: https://render.com/deploy?repo=https://github.com/teetoh861/ozu-
+services:
+  - type: web
+    name: ozu-game-server
+    runtime: docker
+    dockerfilePath: ./apps/server/Dockerfile
+    dockerContext: .
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GUEST_TOKEN_SECRET
+        generateValue: true
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: https://ozu.vercel.app
+      # Recommended for production: Supabase Postgres connection string (see supabase/migrations).
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+    disk:
+      name: ozu-data
+      mountPath: /data
+      sizeGB: 1

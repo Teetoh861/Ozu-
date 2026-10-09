@@ -1,0 +1,356 @@
+import { useEffect, useRef, useState } from "react";
+import { BUILDINGS, LOCATIONS, WATER, WORLD_HALF, type Anim } from "@ozu/shared";
+import { camState, input, local, useGame } from "../state/store";
+import { client, multiplayerConfigured } from "../net/client";
+import { GameCanvas } from "../world/GameCanvas";
+import { playEmote } from "../world/Players";
+import { formatHour, gameHour } from "../world/time";
+import { Logo } from "../App";
+import { ActivitiesPanel, HelpPanel, Meter, PlayerCard, ProfilePanel, ReportModal, SettingsPanel } from "./Panels";
+import { useAmbientSound } from "./sound";
+
+export default function Play() {
+  const panel = useGame((s) => s.panel);
+  const reportTarget = useGame((s) => s.reportTarget);
+
+  useEffect(() => {
+    void client.connect();
+    const seen = localStorage.getItem("ozu.seenHelp");
+    if (!seen) {
+      useGame.getState().set({ panel: "help" });
+      try { localStorage.setItem("ozu.seenHelp", "1"); } catch {}
+    }
+    return () => client.disconnect();
+  }, []);
+  useKeyboard();
+  useAmbientSound();
+
+  return (
+    <div className="play">
+      <GameCanvas />
+      <TopBar />
+      <ConnectionBanner />
+      <Minimap />
+      <ChallengeHud />
+      <InteractionPrompt />
+      <Chat />
+      <EmoteBar />
+      <TouchControls />
+      <Toasts />
+      {panel === "activities" && <ActivitiesPanel />}
+      {panel === "profile" && <ProfilePanel />}
+      {panel === "settings" && <SettingsPanel />}
+      {panel === "help" && <HelpPanel />}
+      {panel === "player" && <PlayerCard />}
+      {reportTarget && <ReportModal />}
+    </div>
+  );
+}
+
+function useKeyboard() {
+  useEffect(() => {
+    const typing = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      return t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT";
+    };
+    const down = (e: KeyboardEvent) => {
+      const g = useGame.getState();
+      if (e.key === "Escape") {
+        g.set({ panel: null, chatOpen: false, reportTarget: null, selectedPlayer: null });
+        input.keys.clear();
+        return;
+      }
+      if (typing(e) || g.panel || g.reportTarget) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        g.set({ chatOpen: true });
+        input.keys.clear();
+        return;
+      }
+      if (e.code === "KeyE" && g.prompt) g.prompt.action();
+      const emotes: Record<string, Anim> = { Digit1: "wave", Digit2: "dance", Digit3: "clap" };
+      if (emotes[e.code]) playEmote(emotes[e.code]);
+      input.keys.add(e.code);
+    };
+    const up = (e: KeyboardEvent) => input.keys.delete(e.code);
+    const blur = () => input.keys.clear();
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
+}
+
+function TopBar() {
+  const progress = useGame((s) => s.progress);
+  const online = useGame((s) => Object.keys(s.players).length + (s.conn === "online" ? 1 : 0));
+  const set = useGame((s) => s.set);
+  const [clock, setClock] = useState(formatHour(gameHour()));
+  useEffect(() => {
+    const t = setInterval(() => setClock(formatHour(gameHour())), 5000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <header className="topbar">
+      <div className="topbar-left">
+        <Logo small />
+        <div className="stat" title="Coins (no real-world value)"><span className="coin" aria-hidden>●</span>{progress?.coins ?? 0}</div>
+        <div className="stat" title="Reputation">★ {progress?.rep ?? 0}</div>
+        <div className="stat muted hide-sm" title="In-game time">{clock}</div>
+        <div className="stat muted hide-sm" title="Players in this district">👥 {online}</div>
+      </div>
+      <nav className="topbar-right" aria-label="Game menu">
+        <button className="icon-btn label" onClick={() => set({ panel: "activities" })}>🎯<span>Activities</span></button>
+        <button className="icon-btn label" onClick={() => set({ panel: "profile" })}>👤<span>Profile</span></button>
+        <button className="icon-btn label" onClick={() => set({ panel: "settings" })}>⚙️<span>Settings</span></button>
+        <button className="icon-btn" onClick={() => set({ panel: "help" })} aria-label="Help">?</button>
+      </nav>
+    </header>
+  );
+}
+
+function ConnectionBanner() {
+  const conn = useGame((s) => s.conn);
+  const err = useGame((s) => s.connError);
+  if (conn === "online") return null;
+  if (conn === "offline" && !multiplayerConfigured)
+    return <div className="banner info" role="status">Solo preview — multiplayer server not configured for this build. Progress isn't saved.</div>;
+  if (conn === "failed")
+    return (
+      <div className="banner error" role="alert">
+        {err ?? "Disconnected."}{" "}
+        <button className="btn small" onClick={() => client.retry()}>Reconnect</button>
+        <button className="btn small ghost" onClick={() => useGame.getState().set({ phase: "create" })}>Change name</button>
+      </div>
+    );
+  return <div className="banner warn" role="status">{conn === "connecting" ? "Connecting to Lagos…" : "Connection lost — reconnecting…"}</div>;
+}
+
+function ChallengeHud() {
+  const c = useGame((s) => s.challenge);
+  const conn = useGame((s) => s.conn);
+  if (conn !== "online") return null;
+  return (
+    <div className="challenge-hud">
+      <Meter value={c.progress} max={c.goal} label={`♻️ Clean-up drive ${c.progress}/${c.goal}`} />
+    </div>
+  );
+}
+
+function InteractionPrompt() {
+  const prompt = useGame((s) => s.prompt);
+  if (!prompt) return null;
+  return (
+    <button className="prompt" onClick={prompt.action}>
+      <kbd className="hide-touch">E</kbd> {prompt.label}
+    </button>
+  );
+}
+
+function Chat() {
+  const chat = useGame((s) => s.chat);
+  const open = useGame((s) => s.chatOpen);
+  const conn = useGame((s) => s.conn);
+  const meId = useGame((s) => s.meId);
+  const set = useGame((s) => s.set);
+  const [text, setText] = useState("");
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 640);
+  const list = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    list.current?.scrollTo({ top: list.current.scrollHeight });
+  }, [chat.length, open]);
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+  const send = (e: React.FormEvent) => {
+    e.preventDefault();
+    const t = text.trim();
+    if (t) client.send({ t: "chat", text: t });
+    setText("");
+    set({ chatOpen: false });
+    inputRef.current?.blur();
+  };
+  return (
+    <section className={`chat ${collapsed ? "collapsed" : ""}`} aria-label="Chat">
+      <button className="chat-toggle" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>💬 {collapsed ? "Chat" : "Hide"}</button>
+      {!collapsed && (
+        <>
+          <div className="chat-log" ref={list} aria-live="polite">
+            {chat.length === 0 && <p className="muted small">Say hello! Press Enter to chat. Be kind — reports are reviewed.</p>}
+            {chat.map((c) => (
+              <p key={c.id} className={c.from === meId ? "mine" : ""}>
+                <button className="chat-name" onClick={() => c.from !== meId && set({ selectedPlayer: c.from, panel: "player" })}>{c.name}</button>
+                <span>{c.text}</span>
+              </p>
+            ))}
+          </div>
+          <form onSubmit={send} className="chat-form">
+            <input
+              ref={inputRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onFocus={() => { set({ chatOpen: true }); input.keys.clear(); }}
+              onBlur={() => set({ chatOpen: false })}
+              maxLength={140}
+              placeholder={conn === "online" ? "Press Enter to chat…" : "Chat unavailable offline"}
+              disabled={conn !== "online"}
+              aria-label="Chat message"
+            />
+          </form>
+        </>
+      )}
+    </section>
+  );
+}
+
+function EmoteBar() {
+  return (
+    <div className="emotes" aria-label="Emotes">
+      <button onClick={() => playEmote("wave")} aria-label="Wave">👋</button>
+      <button onClick={() => playEmote("dance")} aria-label="Dance">💃</button>
+      <button onClick={() => playEmote("clap")} aria-label="Clap">👏</button>
+    </div>
+  );
+}
+
+function Toasts() {
+  const toasts = useGame((s) => s.toasts);
+  return (
+    <div className="toasts" aria-live="polite">
+      {toasts.map((t) => <div key={t.id} className={`toast ${t.level}`}>{t.text}</div>)}
+    </div>
+  );
+}
+
+const MAP = 132;
+function Minimap() {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [big, setBig] = useState(false);
+  useEffect(() => {
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const c = canvas.current?.getContext("2d");
+      if (!c) return;
+      const size = canvas.current!.width;
+      const s = size / (WORLD_HALF * 2);
+      const tx = (x: number) => (x + WORLD_HALF) * s, tz = (z: number) => (z + WORLD_HALF) * s;
+      c.fillStyle = "#2a2440";
+      c.fillRect(0, 0, size, size);
+      c.fillStyle = "#3d6b7a";
+      c.fillRect(tx(WATER.x - WATER.w / 2), tz(WATER.z - WATER.d / 2), WATER.w * s, WATER.d * s + 10);
+      c.fillStyle = "#4a4560";
+      c.fillRect(0, tz(-27), size, 10 * s);
+      c.fillStyle = "#8a7d6b";
+      for (const b of BUILDINGS) c.fillRect(tx(b.x - b.w / 2), tz(b.z - b.d / 2), b.w * s, b.d * s);
+      const g = useGame.getState();
+      for (const l of LOCATIONS) {
+        const done = g.progress?.discovered.includes(l.id);
+        c.fillStyle = done ? "#0e8a5f" : "#ff7a1a";
+        c.beginPath();
+        c.arc(tx(l.x), tz(l.z), 3.5, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.fillStyle = "#cfe8d0";
+      for (const it of g.items) c.fillRect(tx(it.x) - 1, tz(it.z) - 1, 2, 2);
+      c.fillStyle = "#7ec8ff";
+      for (const p of Object.values(g.players)) {
+        if (g.blocked.includes(p.id)) continue;
+        c.beginPath();
+        c.arc(tx(p.x), tz(p.z), 2.5, 0, Math.PI * 2);
+        c.fill();
+      }
+      // Me + view direction
+      c.save();
+      c.translate(tx(local.x), tz(local.z));
+      c.rotate(-camState.yaw);
+      c.fillStyle = "#f6c700";
+      c.beginPath();
+      c.moveTo(0, -6); c.lineTo(4, 4); c.lineTo(-4, 4);
+      c.closePath();
+      c.fill();
+      c.restore();
+    };
+    draw();
+    return () => cancelAnimationFrame(raf);
+  }, [big]);
+  return (
+    <button className={`minimap ${big ? "big" : ""}`} onClick={() => setBig(!big)} aria-label={big ? "Shrink map" : "Expand map"}>
+      <canvas ref={canvas} width={big ? 300 : MAP} height={big ? 300 : MAP} />
+    </button>
+  );
+}
+
+/** Virtual joystick on the left half of touch screens, plus a run toggle. */
+function TouchControls() {
+  const [touch, setTouch] = useState(false);
+  const [stick, setStick] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
+  const [run, setRun] = useState(false);
+  const id = useRef<number | null>(null);
+  useEffect(() => {
+    const coarse = matchMedia("(pointer: coarse)").matches;
+    setTouch(coarse);
+  }, []);
+  useEffect(() => {
+    if (!touch) return;
+    const R = 50;
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== "touch" || id.current !== null) return;
+      if (!(e.target instanceof HTMLCanvasElement) || e.clientX > window.innerWidth * 0.4) return;
+      id.current = e.pointerId;
+      setStick({ x: e.clientX, y: e.clientY, dx: 0, dy: 0 });
+    };
+    const move = (e: PointerEvent) => {
+      if (e.pointerId !== id.current) return;
+      setStick((s) => {
+        if (!s) return s;
+        let dx = e.clientX - s.x, dy = e.clientY - s.y;
+        const m = Math.hypot(dx, dy);
+        if (m > R) { dx = (dx / m) * R; dy = (dy / m) * R; }
+        input.joyX = dx / R;
+        input.joyY = dy / R;
+        return { ...s, dx, dy };
+      });
+    };
+    const up = (e: PointerEvent) => {
+      if (e.pointerId !== id.current) return;
+      id.current = null;
+      input.joyX = input.joyY = 0;
+      setStick(null);
+    };
+    window.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [touch]);
+  if (!touch) return null;
+  return (
+    <>
+      {stick ? (
+        <div className="joystick" style={{ left: stick.x - 60, top: stick.y - 60 }} aria-hidden>
+          <div className="knob" style={{ transform: `translate(${stick.dx}px, ${stick.dy}px)` }} />
+        </div>
+      ) : (
+        <div className="joystick-hint" aria-hidden>Drag here to walk</div>
+      )}
+      <button
+        className={`run-btn ${run ? "on" : ""}`}
+        onClick={() => { input.run = !run; setRun(!run); }}
+        aria-pressed={run}
+      >
+        {run ? "🏃 Running" : "🚶 Walking"}
+      </button>
+    </>
+  );
+}

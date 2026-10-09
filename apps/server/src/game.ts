@@ -1,0 +1,340 @@
+import { randomUUID } from "node:crypto";
+import {
+  CHALLENGE_GOAL, CHALLENGE_MAX_ITEMS, CHALLENGE_ZONE, COSMETICS, DAILY_GREET_REWARD_CAP, DISCOVER_RANGE, EMOTES,
+  INTERACT_RANGE, LOCATIONS, PICKUP_RANGE, REPORT_REASONS, REWARDS, RUN_SPEED, SPAWN, SPEED_TOLERANCE,
+  cleanChat, collides, clampToWorld, resolveMove,
+  type Anim, type ChallengeItem, type ClientMessage, type Emote, type PublicPlayer, type Reward, type ServerMessage,
+} from "@ozu/shared";
+import { TokenBucket } from "./rateLimit";
+import type { PlayerRecord, Store } from "./store";
+import { log } from "./log";
+
+export interface Conn {
+  send(msg: ServerMessage): void;
+  close(code: number, reason: string): void;
+}
+
+const ANIMS: Anim[] = ["idle", "walk", "run", "wave", "dance", "clap", "sit"];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export class Session {
+  x = SPAWN.x;
+  z = SPAWN.z;
+  ry = 0;
+  anim: Anim = "idle";
+  lastMoveAt = Date.now();
+  joinedAt = Date.now();
+  contributed = 0;
+  recentChat: { text: string; ts: number }[] = [];
+  chatStrikes = 0;
+  mutedUntil = 0;
+  limits = {
+    move: new TokenBucket(30, 25),
+    chat: new TokenBucket(5, 0.5),
+    action: new TokenBucket(10, 2),
+    report: new TokenBucket(3, 1 / 60),
+  };
+  constructor(public conn: Conn, public record: PlayerRecord, public account: "guest" | "member") {
+    // Spread spawns so players don't stack.
+    const a = Math.random() * Math.PI * 2;
+    let [x, z] = clampToWorld(SPAWN.x + Math.cos(a) * 3, SPAWN.z + Math.sin(a) * 2);
+    if (collides(x, z)) [x, z] = [SPAWN.x, SPAWN.z];
+    this.x = x;
+    this.z = z;
+  }
+  get id() {
+    return this.record.id;
+  }
+  public(): PublicPlayer {
+    const r = this.record;
+    return { id: r.id, name: r.name, avatar: r.avatar, equipped: r.progress.equipped, rep: r.progress.rep, x: this.x, z: this.z, ry: this.ry, anim: this.anim };
+  }
+}
+
+export class District {
+  sessions = new Map<string, Session>();
+  items: ChallengeItem[] = [];
+  challengeProgress = 0;
+  private snapTimer: NodeJS.Timeout | null = null;
+  private moved = false;
+
+  constructor(public id: string, private store: Store, private opts: { guestChat: boolean; max: number }) {
+    for (let i = 0; i < CHALLENGE_MAX_ITEMS; i++) this.items.push(this.spawnItem());
+  }
+
+  start(hz: number) {
+    this.snapTimer = setInterval(() => this.broadcastSnapshot(), 1000 / hz);
+  }
+  stop() {
+    if (this.snapTimer) clearInterval(this.snapTimer);
+  }
+  get full() {
+    return this.sessions.size >= this.opts.max;
+  }
+
+  private spawnItem(): ChallengeItem {
+    for (let tries = 0; tries < 50; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 5 + Math.random() * (CHALLENGE_ZONE.r - 5);
+      const x = CHALLENGE_ZONE.x + Math.cos(a) * r;
+      const z = CHALLENGE_ZONE.z + Math.sin(a) * r;
+      if (!collides(x, z, 0.6)) return { id: randomUUID().slice(0, 8), x: +x.toFixed(2), z: +z.toFixed(2) };
+    }
+    return { id: randomUUID().slice(0, 8), x: 6, z: 6 };
+  }
+
+  broadcast(msg: ServerMessage, except?: string, filter?: (s: Session) => boolean) {
+    for (const s of this.sessions.values()) if (s.id !== except && (!filter || filter(s))) s.conn.send(msg);
+  }
+
+  broadcastSnapshot() {
+    if (!this.moved || this.sessions.size === 0) return;
+    this.moved = false;
+    const p = [...this.sessions.values()].map((s) => [s.id, +s.x.toFixed(2), +s.z.toFixed(2), +s.ry.toFixed(2), s.anim] as [string, number, number, number, Anim]);
+    this.broadcast({ t: "snap", p });
+  }
+
+  join(session: Session, guestToken: string | null) {
+    // A second connection for the same identity replaces the first.
+    const existing = this.sessions.get(session.id);
+    if (existing) {
+      existing.conn.close(4001, "Signed in elsewhere");
+      this.sessions.delete(session.id);
+      this.broadcast({ t: "leave", id: session.id });
+    }
+    this.sessions.set(session.id, session);
+    session.conn.send({
+      t: "welcome",
+      you: session.public(),
+      progress: session.record.progress,
+      guestToken,
+      players: [...this.sessions.values()].filter((s) => s.id !== session.id).map((s) => s.public()),
+      items: this.items,
+      challenge: { progress: this.challengeProgress, goal: CHALLENGE_GOAL },
+      blocked: session.record.blocked,
+      account: session.account,
+    });
+    this.broadcast({ t: "join", player: session.public() }, session.id);
+    this.moved = true;
+    log("info", "player_join", { district: this.id, player: session.id, account: session.account, online: this.sessions.size });
+  }
+
+  async leave(session: Session) {
+    if (this.sessions.get(session.id) !== session) return;
+    this.sessions.delete(session.id);
+    this.broadcast({ t: "leave", id: session.id });
+    await this.persist(session);
+    log("info", "player_leave", { district: this.id, player: session.id, online: this.sessions.size });
+  }
+
+  async persist(s: Session) {
+    s.record.updatedAt = Date.now();
+    try {
+      await this.store.savePlayer(s.record);
+    } catch (e) {
+      log("error", "persist_failed", { player: s.id, error: String(e) });
+    }
+  }
+
+  private notice(s: Session, text: string, level: "info" | "warn" | "error" = "warn") {
+    s.conn.send({ t: "notice", level, text });
+  }
+
+  private async grant(s: Session, base: { coins: number; rep: number }, reason: string) {
+    const p = s.record.progress;
+    p.coins += base.coins;
+    p.rep += base.rep;
+    const newly = COSMETICS.filter((c) => p.rep >= c.repRequired && !p.unlocked.includes(c.id));
+    for (const c of newly) p.unlocked.push(c.id);
+    const reward: Reward = { coins: base.coins, rep: base.rep, reason };
+    s.conn.send({ t: "progress", progress: p, reward });
+    for (const c of newly) this.notice(s, `Unlocked: ${c.name}! Equip it from your profile.`, "info");
+    await this.persist(s);
+  }
+
+  private blockedBetween(a: Session, b: Session) {
+    return a.record.blocked.includes(b.id) || b.record.blocked.includes(a.id);
+  }
+
+  async handle(s: Session, msg: ClientMessage) {
+    switch (msg.t) {
+      case "ping":
+        if (Number.isFinite(msg.n)) s.conn.send({ t: "pong", n: msg.n });
+        return;
+
+      case "move": {
+        if (!s.limits.move.take()) return;
+        const { x, z, ry, anim } = msg;
+        if (![x, z, ry].every(Number.isFinite) || !ANIMS.includes(anim)) return;
+        const now = Date.now();
+        const dt = Math.min((now - s.lastMoveAt) / 1000, 1);
+        const maxDist = (RUN_SPEED + SPEED_TOLERANCE) * dt + 0.35;
+        const dist = Math.hypot(x - s.x, z - s.z);
+        if (dist > maxDist || collides(x, z)) {
+          // Reject teleports/wall-clipping but keep honest players moving: advance toward the target as far as allowed.
+          const k = dist > 0 ? Math.min(1, maxDist / dist) : 0;
+          [s.x, s.z] = resolveMove(s.x, s.z, s.x + (x - s.x) * k, s.z + (z - s.z) * k);
+          s.conn.send({ t: "correct", x: s.x, z: s.z });
+          if (dist > 20) log("security", "movement_rejected", { player: s.id, dist: +dist.toFixed(1) });
+        } else {
+          [s.x, s.z] = clampToWorld(x, z);
+        }
+        s.ry = ry;
+        s.anim = anim;
+        s.lastMoveAt = now;
+        this.moved = true;
+        return;
+      }
+
+      case "chat": {
+        if (s.account === "guest" && !this.opts.guestChat) return this.notice(s, "Create a free account to use chat.");
+        if (Date.now() < s.mutedUntil) return this.notice(s, "You're sending messages too quickly. Please wait.");
+        if (!s.limits.chat.take()) {
+          s.chatStrikes++;
+          if (s.chatStrikes >= 3) {
+            s.mutedUntil = Date.now() + 60_000;
+            log("security", "chat_auto_mute", { player: s.id });
+          }
+          return this.notice(s, "Slow down — you're sending messages too quickly.");
+        }
+        const text = cleanChat(msg.text);
+        if (!text) return;
+        const last = s.recentChat.at(-1);
+        if (last && last.text === text && Date.now() - last.ts < 10_000) return; // drop exact repeats
+        s.recentChat.push({ text, ts: Date.now() });
+        if (s.recentChat.length > 20) s.recentChat.shift();
+        const out: ServerMessage = { t: "chat", from: s.id, name: s.record.name, text, ts: Date.now() };
+        // Blocked users never receive each other's messages.
+        this.broadcast(out, undefined, (r) => !this.blockedBetween(r, s));
+        return;
+      }
+
+      case "emote": {
+        if (!s.limits.action.take() || !EMOTES.includes(msg.emote as Emote)) return;
+        s.anim = msg.emote;
+        this.moved = true;
+        this.broadcast({ t: "emote", id: s.id, emote: msg.emote }, undefined, (r) => !this.blockedBetween(r, s));
+        return;
+      }
+
+      case "greet": {
+        if (!s.limits.action.take()) return;
+        const target = this.sessions.get(msg.targetId);
+        if (!target || target === s) return;
+        if (this.blockedBetween(s, target)) return this.notice(s, "You can't interact with this player.");
+        if (Math.hypot(target.x - s.x, target.z - s.z) > INTERACT_RANGE + 0.75) return this.notice(s, "Get a little closer first.");
+        target.conn.send({ t: "greeted", fromId: s.id, name: s.record.name });
+        s.anim = "wave";
+        this.moved = true;
+        this.broadcast({ t: "emote", id: s.id, emote: "wave" }, undefined, (r) => !this.blockedBetween(r, s));
+        await this.rewardGreeting(s, target);
+        await this.rewardGreeting(target, s);
+        return;
+      }
+
+      case "discover": {
+        if (!s.limits.action.take()) return;
+        const loc = LOCATIONS.find((l) => l.id === msg.locationId);
+        const p = s.record.progress;
+        if (!loc || p.discovered.includes(loc.id)) return;
+        if (Math.hypot(loc.x - s.x, loc.z - s.z) > DISCOVER_RANGE + 1) return;
+        p.discovered.push(loc.id);
+        await this.grant(s, REWARDS.discover, `Discovered ${loc.name}`);
+        if (p.discovered.length === LOCATIONS.length) await this.grant(s, { coins: 30, rep: 15 }, "Explored the whole district");
+        return;
+      }
+
+      case "pickup": {
+        if (!s.limits.action.take()) return;
+        const idx = this.items.findIndex((i) => i.id === msg.itemId);
+        if (idx < 0) return;
+        const item = this.items[idx];
+        if (Math.hypot(item.x - s.x, item.z - s.z) > PICKUP_RANGE + 0.75) return;
+        this.items[idx] = this.spawnItem();
+        this.broadcast({ t: "items", items: this.items });
+        s.record.progress.cleanups++;
+        s.contributed++;
+        this.challengeProgress++;
+        await this.grant(s, REWARDS.pickup, "Clean-up drive");
+        if (this.challengeProgress >= CHALLENGE_GOAL) {
+          this.challengeProgress = 0;
+          this.broadcast({ t: "challenge", progress: CHALLENGE_GOAL, goal: CHALLENGE_GOAL, completed: true });
+          for (const c of this.sessions.values()) {
+            if (c.contributed > 0) {
+              c.contributed = 0;
+              c.record.progress.challengesCompleted++;
+              await this.grant(c, REWARDS.challenge, "Community clean-up complete!");
+            }
+          }
+        }
+        this.broadcast({ t: "challenge", progress: this.challengeProgress, goal: CHALLENGE_GOAL });
+        return;
+      }
+
+      case "report": {
+        if (!s.limits.report.take()) return this.notice(s, "You've sent several reports recently. Please wait a minute.");
+        const target = this.sessions.get(msg.targetId);
+        if (!target || target === s || !REPORT_REASONS.includes(msg.reason)) return;
+        const details = typeof msg.details === "string" ? msg.details.slice(0, 500) : "";
+        await this.store.addReport({
+          id: randomUUID(),
+          reporterId: s.id,
+          targetId: target.id,
+          targetName: target.record.name,
+          reason: msg.reason,
+          details,
+          evidence: target.recentChat.slice(-10),
+          status: "open",
+          createdAt: Date.now(),
+        });
+        log("security", "player_reported", { reporter: s.id, target: target.id, reason: msg.reason });
+        this.notice(s, "Thanks — our moderators will review this report.", "info");
+        return;
+      }
+
+      case "block": {
+        const b = s.record.blocked;
+        if (typeof msg.targetId !== "string" || msg.targetId === s.id) return;
+        if (msg.blocked && !b.includes(msg.targetId) && b.length < 500) b.push(msg.targetId);
+        if (!msg.blocked) s.record.blocked = b.filter((x) => x !== msg.targetId);
+        await this.persist(s);
+        return;
+      }
+
+      case "equip": {
+        const p = s.record.progress;
+        if (msg.cosmeticId !== null && !p.unlocked.includes(msg.cosmeticId)) return;
+        p.equipped = msg.cosmeticId;
+        s.conn.send({ t: "progress", progress: p });
+        this.broadcast({ t: "player", player: s.public() });
+        await this.persist(s);
+        return;
+      }
+    }
+  }
+
+  private async rewardGreeting(s: Session, other: Session) {
+    const now = Date.now();
+    const day = new Date().toISOString().slice(0, 10);
+    const r = s.record;
+    if (r.greetDay.day !== day) r.greetDay = { day, count: 0 };
+    const last = r.greetPairs[other.id] ?? 0;
+    if (now - last < DAY_MS) return; // one rewarded greeting per pair per day
+    if (r.greetDay.count >= DAILY_GREET_REWARD_CAP) return;
+    r.greetPairs[other.id] = now;
+    // Prune old pairs to keep the record small.
+    for (const [k, v] of Object.entries(r.greetPairs)) if (now - v > DAY_MS) delete r.greetPairs[k];
+    r.greetPairs[other.id] = now;
+    r.greetDay.count++;
+    r.progress.greetings++;
+    await this.grant(s, REWARDS.greet, `Met ${other.record.name}`);
+  }
+
+  kick(playerId: string, reason: string) {
+    const s = this.sessions.get(playerId);
+    if (!s) return false;
+    s.conn.send({ t: "kicked", reason });
+    s.conn.close(4003, reason);
+    return true;
+  }
+}
