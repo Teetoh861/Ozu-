@@ -9,6 +9,7 @@ import { formatHour, gameHour } from "../world/time";
 import { Logo } from "../App";
 import { ActivityLayer, PlaceCard, PlacesSheet } from "./Places";
 import { Radio, STATIONS } from "./radio";
+import { countClick, nigerianStations, playLive, searchStations, setLiveVolume, stopLive, type LiveStation } from "./liveRadio";
 import { capture } from "../world/Tap";
 import { navigateTo } from "../world/nav";
 import { multiplayerConfigured as mpConfigured } from "../net/client";
@@ -183,8 +184,8 @@ function EventBanner() {
   const there = dist <= 7;
   return (
     <div className={`event-banner ${there ? "there" : ""}`} role="status" style={{ pointerEvents: "auto" }}>
-      <strong>🔔 {event.venue}</strong>
-      <span>{there ? "You're in class — stay here!" : `${dist} m away`}</span>
+      <strong>{event.kind === "show" ? "🎉" : "🔔"} {event.venue}</strong>
+      <span>{there ? (event.kind === "show" ? "You're in — enjoy!" : "You're in class — stay here!") : `${dist} m away`}</span>
       <span className="timer">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</span>
       {!there && <button className="btn small" onClick={() => navigateTo(event.x, event.z)}>🏃 Run there</button>}
     </div>
@@ -538,47 +539,128 @@ function PhotoPreview() {
 // ---------------- Radio ----------------
 
 let radioInstance: Radio | null = null;
+let radioVolume = 0.6;
 
 function RadioPanel() {
-  const { radio, set } = useGame();
-  const [vol, setVol] = useState(0.5);
-  const tune = (id: string | null) => {
+  const { radio, set, radioTab } = useGame();
+  const [vol, setVol] = useState(radioVolume);
+  const [live, setLive] = useState<LiveStation[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState(radioTab === "live-unilag" ? "unilag" : "");
+  const tab = radioTab === "ozu" ? "ozu" : "live";
+
+  const load = async (query: string) => {
+    setLoading(true);
+    setErr(null);
+    try {
+      setLive(query.trim() ? await searchStations(query.trim()) : await nigerianStations());
+    } catch {
+      setErr("Couldn't reach the radio directory. Check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (tab === "live" && !live) void load(q);
+  }, [tab]);
+
+  const stopAll = () => {
     radioInstance?.stop();
     radioInstance = null;
+    stopLive();
+  };
+  const tuneOzu = (id: string | null) => {
+    stopAll();
     if (id) {
       radioInstance = new Radio(id, vol);
       radioInstance.start();
     }
-    set({ radio: id });
-    if (id && useGame.getState().settings.captions) useGame.getState().toast(`📻 Now playing: ${STATIONS.find((s) => s.id === id)?.name}`, "info");
+    set({ radio: id ? `ozu:${id}` : null });
   };
+  const tuneLive = (st: LiveStation | null) => {
+    stopAll();
+    if (!st) return set({ radio: null });
+    set({ radio: `live:${st.stationuuid}`, radioName: st.name });
+    countClick(st.stationuuid);
+    playLive(st.url_resolved, vol, () => {
+      if (useGame.getState().radio === `live:${st.stationuuid}`) {
+        useGame.getState().set({ radio: null });
+        useGame.getState().toast(`📻 ${st.name} isn't streaming right now. Try another station.`, "warn");
+      }
+    });
+    if (useGame.getState().settings.captions) useGame.getState().toast(`📻 Tuning in to ${st.name}…`, "info");
+  };
+
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && set({ panel: null })}>
       <div className="modal" role="dialog" aria-label="Radio">
         <header>
-          <h2>📻 Ozu Radio</h2>
+          <h2>📻 Radio</h2>
           <button className="icon-btn" onClick={() => set({ panel: null })} aria-label="Close">✕</button>
         </header>
         <div className="modal-body">
-          <ul className="stations">
-            {STATIONS.map((s) => (
-              <li key={s.id}>
-                <button className={`station ${radio === s.id ? "on" : ""}`} onClick={() => tune(radio === s.id ? null : s.id)}>
-                  <span className="st-icon">{radio === s.id ? "🔊" : "▶️"}</span>
-                  <span>
-                    <strong>{s.name}</strong>
-                    <small>{s.tagline}</small>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={tab === "live"} className={tab === "live" ? "on" : ""} onClick={() => set({ radioTab: "live" })}>🔴 Live Nigerian radio</button>
+            <button role="tab" aria-selected={tab === "ozu"} className={tab === "ozu" ? "on" : ""} onClick={() => set({ radioTab: "ozu" })}>🎛️ Ozu FM</button>
+          </div>
+
+          {tab === "live" ? (
+            <>
+              <form className="row gap radio-search" onSubmit={(e) => { e.preventDefault(); void load(q); }}>
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search stations (e.g. Unilag, Wazobia, Cool FM)" aria-label="Search stations" />
+                <button className="btn small primary">Search</button>
+              </form>
+              <div className="chips quick">
+                {["Unilag", "Wazobia", "Cool FM", "Beat", "Naija", "Afrobeats"].map((t) => (
+                  <button key={t} className="chip" onClick={() => { setQ(t); void load(t); }}>{t}</button>
+                ))}
+              </div>
+              {loading && <div className="spinner" />}
+              {err && <p className="error small">{err}</p>}
+              {!loading && live && live.length === 0 && <p className="muted small">No playable stations found for that search.</p>}
+              <ul className="stations">
+                {live?.map((st) => {
+                  const on = radio === `live:${st.stationuuid}`;
+                  return (
+                    <li key={st.stationuuid}>
+                      <button className={`station ${on ? "on" : ""}`} onClick={() => tuneLive(on ? null : st)}>
+                        {st.favicon?.startsWith("https://") ? <img src={st.favicon} alt="" className="st-logo" loading="lazy" onError={(e) => ((e.target as HTMLImageElement).style.visibility = "hidden")} /> : <span className="st-icon">📻</span>}
+                        <span>
+                          <strong>{st.name.trim()}</strong>
+                          <small>{[st.state, st.tags.split(",").slice(0, 3).join(", ")].filter(Boolean).join(" · ") || "Live"}</small>
+                        </span>
+                        <span className="st-play">{on ? "🔊" : "▶️"}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="muted small">Live streams come straight from each station via the open Radio Browser directory. Availability depends on the station.</p>
+            </>
+          ) : (
+            <ul className="stations">
+              {STATIONS.map((st) => {
+                const on = radio === `ozu:${st.id}`;
+                return (
+                  <li key={st.id}>
+                    <button className={`station ${on ? "on" : ""}`} onClick={() => tuneOzu(on ? null : st.id)}>
+                      <span className="st-icon">{on ? "🔊" : "▶️"}</span>
+                      <span>
+                        <strong>{st.name}</strong>
+                        <small>{st.tagline}</small>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <label className="setting">
             <span>Volume</span>
-            <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => { setVol(+e.target.value); radioInstance?.setVolume(+e.target.value); }} />
+            <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => { const v = +e.target.value; setVol(v); radioVolume = v; radioInstance?.setVolume(v); setLiveVolume(v); }} />
           </label>
-          {radio && <button className="btn" onClick={() => tune(null)}>Turn radio off</button>}
-          <p className="muted small">Original grooves made for Ozu. Live Lagos stations are coming as we sign licensing partners.</p>
+          {radio && <button className="btn" onClick={() => { stopAll(); set({ radio: null }); }}>Turn radio off</button>}
         </div>
       </div>
     </div>

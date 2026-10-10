@@ -337,3 +337,15 @@ kbd { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.2
   .prompt { bottom: 180px; }
 }
 .quiz-review .answer { color: #4fd39b; }
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tabs button { flex: 1; padding: 9px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); font-weight: 600; font-size: 0.88rem; }
+.tabs button.on { background: var(--orange); color: #1b0f00; border-color: var(--orange); }
+.radio-search input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,0.3); color: #fff; }
+.chips.quick { margin: 10px 0; }
+.chips.quick .chip { padding: 5px 11px; font-size: 0.8rem; }
+.station .st-logo { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; background: #fff; flex: none; }
+.station > span:nth-child(2) { flex: 1; min-width: 0; }
+.station strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-play { margin-left: auto; }
+.select { padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,0.3); color: #fff; }
+.jambite { color: #ffd166; font-size: 11px; margin-left: 4px; }

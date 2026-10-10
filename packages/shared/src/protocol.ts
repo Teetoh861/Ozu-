@@ -40,7 +40,7 @@ export type AgeGroup = "16-17" | "18+";
 
 export interface CampusEvent {
   id: string;
-  kind: "lecture";
+  kind: "lecture" | "show";
   title: string;
   venue: string;
   x: number;

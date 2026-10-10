@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   CHALLENGE_GOAL, CHALLENGE_MAX_ITEMS, COSMETICS, DAILY_GREET_REWARD_CAP, DISCOVER_RANGE, EMOTES,
-  INTERACT_RANGE, LECTURE_RADIUS, LECTURE_SECONDS, LECTURE_VENUES, PICKUP_RANGE, REPORT_REASONS, REWARDS,
+  INTERACT_RANGE, LECTURE_RADIUS, LECTURE_SECONDS, LECTURE_VENUES, SHOW_EVENTS, PICKUP_RANGE, REPORT_REASONS, REWARDS,
   RUN_SPEED, SPEED_TOLERANCE, cleanChat, collides, clampToWorld, getMap, resolveMove,
   CHILL_SECONDS, FOODS, PLACE_RANGE, QUIZ_BANK, QUIZ_COINS_PER_CORRECT, QUIZ_LENGTH, RESULTS, SHOT_LINES, placeFor,
   type Place,
@@ -216,13 +216,19 @@ export class District {
 
   // ---------------- Campus "lecture rush" events ----------------
 
+  private eventCount = 0;
+
   startLecture(venueId?: string) {
     if (this.lecture || this.sessions.size === 0) return;
+    // Every third campus event is a big moment (Mr & Miss UNILAG, Hall Week…) instead of a lecture.
+    const show = !venueId && ++this.eventCount % 3 === 0 ? SHOW_EVENTS[Math.floor(Math.random() * SHOW_EVENTS.length)] : null;
     const venue = LECTURE_VENUES.find((v) => v.id === venueId) ?? LECTURE_VENUES[Math.floor(Math.random() * LECTURE_VENUES.length)];
-    const event: CampusEvent = {
-      id: randomUUID().slice(0, 8), kind: "lecture", title: `Lecture starting at the ${venue.name}!`,
-      venue: venue.name, x: venue.x, z: venue.z, secondsLeft: LECTURE_SECONDS,
-    };
+    const event: CampusEvent = show
+      ? { id: randomUUID().slice(0, 8), kind: "show", title: show.title, venue: show.name, x: show.x, z: show.z, secondsLeft: LECTURE_SECONDS }
+      : {
+          id: randomUUID().slice(0, 8), kind: "lecture", title: `Lecture starting at the ${venue.name}!`,
+          venue: venue.name, x: venue.x, z: venue.z, secondsLeft: LECTURE_SECONDS,
+        };
     this.lecture = { event, endsAt: Date.now() + LECTURE_SECONDS * 1000 };
     this.broadcast({ t: "event", event });
     this.timers.push(setTimeout(() => void this.endLecture(), LECTURE_SECONDS * 1000));
@@ -238,8 +244,8 @@ export class District {
       s.conn.send({ t: "event", event: null, result: { venue: l.event.venue, attended: present.length, you } });
     }
     for (const s of present) {
-      s.record.progress.lecturesAttended++;
-      await this.grant(s, REWARDS.lecture, `Made it to class at the ${l.event.venue}`);
+      if (l.event.kind === "lecture") s.record.progress.lecturesAttended++;
+      await this.grant(s, REWARDS.lecture, l.event.kind === "lecture" ? `Made it to class at the ${l.event.venue}` : `You were there: ${l.event.venue}`);
     }
   }
 

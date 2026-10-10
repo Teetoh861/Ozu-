@@ -83,6 +83,9 @@ export function PlaceCard() {
         playEmote("dance");
         client.act("dance", place.id);
         return;
+      case "radio":
+        set({ panel: "radio", radioTab: "live-unilag" });
+        return;
       case "travel": {
         const other = place.map === "ozu" ? "unilag" : "ozu";
         client.goto(other === "unilag" ? "u-gate" : "park");

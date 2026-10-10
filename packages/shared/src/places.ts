@@ -1,7 +1,7 @@
 import type { MapId } from "./world";
 
 /** Things a player can do at a place. Rewards are validated on the server. */
-export type ActionId = "food" | "quiz" | "result" | "chill" | "penalty" | "shot" | "shop" | "dance" | "travel";
+export type ActionId = "food" | "quiz" | "result" | "chill" | "penalty" | "shot" | "shop" | "dance" | "travel" | "radio";
 
 export interface ActionDef {
   id: ActionId;
@@ -20,6 +20,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
   shop: { id: "shop", label: "Buy drip", emoji: "🛍️", hint: "New accessories for your character." },
   dance: { id: "dance", label: "Dance", emoji: "💃", hint: "Show your moves. Rep for good energy." },
   travel: { id: "travel", label: "Take a danfo", emoji: "🚌", hint: "Ride between Ozu District and Unilag." },
+  radio: { id: "radio", label: "Tune in to live radio", emoji: "📻", hint: "Listen to real Nigerian stations live." },
 };
 
 export interface Place {
@@ -46,6 +47,8 @@ export const PLACES: Place[] = [
   { id: "u-sports", map: "unilag", emoji: "⚽", buildingId: "u-stands", actions: ["penalty"] },
   { id: "u-garden", map: "unilag", emoji: "💞", actions: ["shot", "chill"] },
   { id: "u-buka", map: "unilag", emoji: "🍛", buildingId: "u-buka", actions: ["food"] },
+  { id: "u-auditorium", map: "unilag", emoji: "🎭", buildingId: "u-auditorium", actions: ["dance", "chill"] },
+  { id: "u-radio", map: "unilag", emoji: "📻", buildingId: "u-radio", actions: ["radio"] },
 ];
 
 export function placeFor(id: string) {

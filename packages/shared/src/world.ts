@@ -131,6 +131,8 @@ const UNILAG: MapDef = {
     { id: "u-sports", name: "Sports Centre", blurb: "Track, pitch and inter-hall competitions.", x: -16, z: -38 },
     { id: "u-garden", name: "Love Garden", blurb: "Shade, benches and long conversations.", x: -16, z: 46 },
     { id: "u-buka", name: "Campus Buka", blurb: "Rice, swallow and cold drinks between lectures.", x: 8, z: 40 },
+    { id: "u-auditorium", name: "J.F. Ade Ajayi Auditorium", blurb: "The big stage: Mr & Miss UNILAG, convocations, concerts.", x: 26, z: 14 },
+    { id: "u-radio", name: "Radio 103.1 FM Studio", blurb: "Nigeria's first campus radio station. Request a jam!", x: -24, z: -24 },
   ],
   roads: [
     { x: 0, z: 12, w: 9, d: 88 },
@@ -146,6 +148,10 @@ const UNILAG: MapDef = {
     { id: "u-mariere", kind: "hall", x: -40, z: 6, w: 10, d: 16, h: 15, color: "#d8c8e0", sign: "MARIERE HALL", signColor: "#6a2c70", facing: Q },
     { id: "u-kofo", kind: "hall", x: -40, z: -16, w: 10, d: 14, h: 13, color: "#cfe0cf", sign: "KOFO ADEMOLA HALL", signColor: "#0e8a5f", facing: Q },
     { id: "u-moremi", kind: "hall", x: 30, z: 28, w: 10, d: 16, h: 15, color: "#f0d2c8", sign: "MOREMI HALL", signColor: "#c0262d", facing: -Q },
+    { id: "u-eni-njoku", kind: "hall", x: 30, z: 46, w: 10, d: 12, h: 13, color: "#d6dcc0", sign: "ENI NJOKU HALL", signColor: "#8a5a00", facing: -Q },
+    { id: "u-fagunwa", kind: "hall", x: -40, z: 47, w: 10, d: 12, h: 13, color: "#f2dcc0", sign: "FAGUNWA HALL", signColor: "#b5452f", facing: Q },
+    { id: "u-auditorium", kind: "venue", x: 34, z: 12, w: 10, d: 14, h: 10, color: "#e9e3d6", sign: "J.F. ADE AJAYI AUDITORIUM", signColor: "#7a1f3d", facing: -Q },
+    { id: "u-radio", kind: "faculty", x: -24, z: -18, w: 6, d: 6, h: 6, color: "#cfd5de", sign: "RADIO 103.1 FM", signColor: "#c0262d", facing: Math.PI },
     { id: "u-buka", kind: "food", x: 15, z: 42, w: 7, d: 8, h: 4, color: "#e8c98f", sign: "CAMPUS BUKA", signColor: "#0e8a5f", facing: -Q },
     { id: "u-shuttle", kind: "transport", x: -12, z: 54, w: 12, d: 4, h: 4, color: "#2a3d8f", sign: "SHUTTLE & DANFO", signColor: "#f6c700", facing: Math.PI },
     { id: "u-stands", kind: "venue", x: -16, z: -55, w: 26, d: 4, h: 5, color: "#9aa5a8", facing: Math.PI },
@@ -175,11 +181,21 @@ export interface Hall {
   color: string;
 }
 
+// Halls of residence at Unilag (Akoka). Six have buildings on the campus map; all can be repped.
 export const HALLS: Hall[] = [
-  { id: "jaja", name: "Jaja Hall", color: "#2a3d8f" },
+  { id: "jaja", name: "King Jaja Hall", color: "#2a3d8f" },
   { id: "moremi", name: "Moremi Hall", color: "#c0262d" },
   { id: "mariere", name: "Mariere Hall", color: "#6a2c70" },
   { id: "kofo", name: "Kofo Ademola Hall", color: "#0e8a5f" },
+  { id: "eni-njoku", name: "Eni Njoku Hall", color: "#8a5a00" },
+  { id: "fagunwa", name: "Fagunwa Hall", color: "#b5452f" },
+  { id: "el-kanemi", name: "El-Kanemi Hall", color: "#3c6e71" },
+  { id: "sodeinde", name: "Sodeinde Hall", color: "#5c4d7d" },
+  { id: "biobaku", name: "Saburi Biobaku Hall", color: "#1d6f42" },
+  { id: "makama", name: "Makama Bida Hall", color: "#9c6644" },
+  { id: "tinubu", name: "Madam Tinubu Hall", color: "#d1495b" },
+  { id: "amina", name: "Queen Amina Hall", color: "#c77dff" },
+  { id: "honours", name: "Honours Hall", color: "#e0a100" },
 ];
 
 export function hallName(id: string | null | undefined) {
@@ -192,6 +208,14 @@ export const LECTURE_VENUES = [
   { id: "u-science", name: "Faculty of Science", x: 7, z: 8 },
   { id: "u-engineering", name: "Faculty of Engineering", x: -7, z: 30 },
   { id: "u-library", name: "Main Library", x: 6, z: -14 },
+];
+
+/** Big campus moments that rotate in between lectures. */
+export const SHOW_EVENTS = [
+  { id: "mr-miss", name: "J.F. Ade Ajayi Auditorium", title: "Mr & Miss UNILAG is starting at the Auditorium! 👑", x: 26, z: 14 },
+  { id: "hall-week", name: "Jaja Hall", title: "Hall Week jam at Jaja Hall — everybody come! 🎉", x: -31, z: 30 },
+  { id: "jambite", name: "Love Garden", title: "Jambite welcome hangout at Love Garden 🐣", x: -16, z: 44 },
+  { id: "sports", name: "Sports Centre", title: "Inter-hall match at the Sports Centre ⚽", x: -16, z: -38 },
 ];
 export const LECTURE_RADIUS = 7;
 export const LECTURE_SECONDS = 75;

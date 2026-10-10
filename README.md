@@ -51,6 +51,12 @@ Ozu is a multiplayer, Lagos-inspired social-life simulation that runs in the bro
 - **📻 Ozu Radio**: three original, procedurally generated stations (Afro Vibes, Amapiano, Highlife). They are royalty-free, and licensed live streams can be added as stations later.
 - **Lecture rush**: has a **Run there** button that auto-runs you to class.
 
+## Live radio & campus life — v0.4
+
+- **📻 Live Nigerian radio**: the game browses and plays real stations through the open [Radio Browser](https://www.radio-browser.info/) directory, which needs no API key and has fallback mirrors. It shows the most-played Nigerian stations, with search and quick tags (Unilag, Wazobia, Cool FM…). Only HTTPS streams are listed, and streams come straight from each station. Ozu FM's original generated stations remain as a second tab.
+- **Campus additions**: the J.F. Ade Ajayi Auditorium, the Radio 103.1 FM studio (tap it to tune in), Eni Njoku and Fagunwa halls, and all 13 halls of residence in the hall picker and leaderboard.
+- **Campus moments**: Mr & Miss UNILAG, Hall Week, a Jambite welcome and inter-hall matches rotate in between lecture rushes. New players on campus show a 🐣 Jambite tag until they reach 30 rep.
+
 ## Run locally
 
 ```bash

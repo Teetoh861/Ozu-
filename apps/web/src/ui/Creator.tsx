@@ -99,14 +99,13 @@ export function Creator() {
             ))}
           </Group>
 
-          <Group label="Unilag hall (optional)">
-            <Chip on={hall === null} onClick={() => setHall(null)}>Not a student</Chip>
-            {HALLS.map((h) => (
-              <Chip key={h.id} on={hall === h.id} onClick={() => setHall(h.id)}>
-                <span className="hall-dot" style={{ background: h.color }} /> {h.name}
-              </Chip>
-            ))}
-          </Group>
+          <label className="field">
+            <span>Unilag hall (optional)</span>
+            <select className="select" value={hall ?? ""} onChange={(e) => setHall(e.target.value || null)}>
+              <option value="">Not a student / no hall</option>
+              {HALLS.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+            </select>
+          </label>
           <p className="muted small hall-note">Rep your hall: everything you earn on campus counts toward the hall leaderboard. You can switch hall once every 30 days.</p>
 
           <button className="btn primary big" disabled={!check.ok}>Continue</button>

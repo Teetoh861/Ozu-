@@ -101,6 +101,8 @@ interface State {
   activity: Activity | null;
   navTarget: { x: number; z: number } | null;
   radio: string | null;
+  radioName: string | null;
+  radioTab: "live" | "live-unilag" | "ozu";
   conn: Conn;
   connError: string | null;
   name: string;
@@ -147,6 +149,8 @@ export const useGame = create<State>((set, get) => ({
   activity: null,
   navTarget: null,
   radio: null,
+  radioName: null,
+  radioTab: "live",
   conn: "offline",
   connError: null,
   name: LS.get("ozu.name", ""),

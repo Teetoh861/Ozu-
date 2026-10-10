@@ -134,6 +134,7 @@ function PlayerLabel({ id }: { id: string }) {
   const student = useGame((s) => s.players[id]?.student ?? false);
   const bubble = useGame((s) => s.players[id]?.bubble);
   const showNames = useGame((s) => s.settings.showNames);
+  const campus = useGame((s) => s.map === "unilag");
   const ref = useLabel(`p:${id}`, () => {
     const p = playerPositions.get(id);
     return p ? { x: p.x, y: 2.2, z: p.z } : null;
@@ -148,6 +149,7 @@ function PlayerLabel({ id }: { id: string }) {
             {hall && <span className="hall-dot" style={{ background: HALLS.find((h) => h.id === hall)?.color }} title={hallName(hall) ?? ""} />}
             {name}
             {student && <span title="Verified Unilag student"> 🎓</span>}
+            {campus && rep < 30 && <span className="jambite" title="New on campus"> 🐣 Jambite</span>}
             <span className="rep">★ {rep}</span>
           </button>
         )}
