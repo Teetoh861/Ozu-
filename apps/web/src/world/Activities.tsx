@@ -42,11 +42,14 @@ export function ChallengeItems() {
   );
 }
 
+// Stable empty array: a selector that returns a fresh [] each call makes React re-render forever.
+const NONE: string[] = [];
+
 const beamMat = new THREE.MeshBasicMaterial({ color: "#ff9a4a", transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
 
 /** Light beams over undiscovered locations, with labels when nearby. */
 export function LocationMarkers() {
-  const discovered = useGame((s) => s.progress?.discovered ?? []);
+  const discovered = useGame((s) => s.progress?.discovered ?? NONE);
   const ref = useRef<THREE.Group>(null!);
   const labels = useRef<(HTMLDivElement | null)[]>([]);
   useFrame(({ clock }) => {
