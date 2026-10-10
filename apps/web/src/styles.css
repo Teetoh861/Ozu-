@@ -264,3 +264,76 @@ kbd { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.2
 .wl { position: absolute; top: 0; left: 0; will-change: transform; }
 .wl .nametag { pointer-events: auto; }
 .wl .tag { transform: none; }
+/* Dock */
+.dock { position: absolute; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 8px; z-index: 5; }
+.dock-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; padding: 8px 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(8px); font-size: 1.35rem; line-height: 1; }
+.dock-btn span { font-size: 0.72rem; font-weight: 700; }
+.dock-btn.primary { background: var(--orange); color: #1b0f00; border-color: var(--orange); }
+.dock-btn.on { border-color: var(--yellow); box-shadow: 0 0 0 2px rgba(246,199,0,0.4); }
+.prompt { bottom: 104px; }
+/* Places */
+.places-section h3 { font-family: var(--display); margin: 4px 0 8px; }
+.places { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; }
+.places li { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 10px; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 10px; }
+.places .pt { display: flex; flex-direction: column; min-width: 0; }
+.places .pt span { font-size: 0.78rem; color: #b9b2cc; }
+.places .pb { display: flex; gap: 6px; }
+.pe { font-size: 1.6rem; text-align: center; }
+.pe.big { font-size: 2.2rem; }
+.place-card { position: absolute; left: 50%; bottom: max(84px, calc(env(safe-area-inset-bottom) + 84px)); transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); background: var(--panel-solid); border: 1px solid var(--line); border-radius: 18px; padding: 16px; box-shadow: 0 16px 40px rgba(0,0,0,0.45); z-index: 20; animation: pop2 .2s ease-out; }
+.place-card .close { position: absolute; top: 10px; right: 10px; min-width: 32px; height: 32px; }
+.pc-head { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; padding-right: 36px; }
+.pc-head h3 { margin: 0; font-family: var(--display); }
+.pc-head p { margin: 2px 0 0; }
+.pc-actions { display: grid; gap: 8px; }
+.action { display: flex; gap: 12px; align-items: center; text-align: left; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,122,26,0.4); background: rgba(255,122,26,0.12); }
+.action .ae { font-size: 1.6rem; }
+.action strong { display: block; }
+.action small { color: #cfc8e2; }
+/* Activities */
+.wallet { margin: 0 0 10px; }
+.wallet strong { color: var(--yellow); }
+.menu { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 8px; }
+.menu li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; background: rgba(255,255,255,0.05); border-radius: 10px; padding: 10px; }
+.menu li > div { display: flex; flex-direction: column; grid-column: 1 / 3; }
+.grade { font-family: var(--display); font-size: 4rem; text-align: center; color: var(--yellow); margin: 6px 0; }
+.center { text-align: center; }
+.quiz-q { font-family: var(--display); margin: 6px 0 14px; }
+.quiz-options { display: grid; gap: 8px; margin-bottom: 8px; }
+.quiz-options .btn { text-align: left; }
+.quiz-review { padding-left: 18px; display: grid; gap: 8px; }
+.quiz-review .ok strong { color: #4fd39b; }
+.quiz-review .no strong { color: #ff9d9d; }
+.chill { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); background: var(--panel-solid); border: 1px solid var(--line); border-radius: 16px; padding: 18px; width: min(360px, calc(100vw - 24px)); text-align: center; z-index: 20; }
+.pitch { position: relative; height: 150px; border-radius: 12px; background: linear-gradient(#2f7a34, #3f8a3a); overflow: hidden; margin-bottom: 10px; }
+.goal { position: absolute; left: 12%; right: 12%; top: 18px; height: 70px; border: 4px solid #fff; border-bottom: 0; }
+.keeper { position: absolute; top: 52px; font-size: 32px; transform: translateX(-50%); }
+.aim { position: absolute; top: 40px; font-size: 26px; transform: translateX(-50%); }
+.kicks { display: flex; gap: 6px; justify-content: center; font-size: 1.2rem; margin-bottom: 10px; }
+.stations { list-style: none; padding: 0; margin: 0 0 14px; display: grid; gap: 8px; }
+.station { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); }
+.station.on { border-color: var(--yellow); background: rgba(246,199,0,0.12); }
+.station small { display: block; color: #b9b2cc; }
+.st-icon { font-size: 1.4rem; }
+.modal.photo { width: min(560px, 100%); }
+.snap { width: 100%; border-radius: 10px; margin-bottom: 12px; display: block; }
+/* Start chooser */
+.start-choose { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; gap: 18px; text-align: center; }
+.start-choose h2 { font-family: var(--display); font-size: clamp(1.6rem, 4vw, 2.4rem); margin: 0; }
+.start-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: min(760px, 100%); }
+.start-card { display: flex; flex-direction: column; gap: 8px; padding: 26px 20px; border-radius: 18px; border: 2px solid var(--line); text-align: left; transition: transform .1s; }
+.start-card:hover { transform: translateY(-2px); }
+.start-card.ozu { background: linear-gradient(150deg, rgba(255,122,26,0.35), rgba(27,18,64,0.9)); border-color: var(--orange); }
+.start-card.unilag { background: linear-gradient(150deg, rgba(122,31,61,0.6), rgba(27,18,64,0.9)); border-color: #c0262d; }
+.start-card strong { font-family: var(--display); font-size: 1.5rem; }
+.start-card span { color: #ddd6ee; line-height: 1.45; }
+.sc-emoji { font-size: 2.6rem !important; }
+@media (max-width: 640px) {
+  .start-cards { grid-template-columns: 1fr; }
+  .dock { left: auto; right: 12px; transform: none; bottom: 66px; flex-direction: row; }
+  .dock-btn { min-width: 54px; padding: 6px 8px; font-size: 1.2rem; }
+  .run-btn { bottom: 130px; }
+  .place-card { bottom: 130px; }
+  .prompt { bottom: 180px; }
+}
+.quiz-review .answer { color: #4fd39b; }

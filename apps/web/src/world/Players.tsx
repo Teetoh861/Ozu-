@@ -3,12 +3,13 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useShallow } from "zustand/react/shallow";
 import {
-  INTERACT_RANGE, PICKUP_RANGE, RUN_SPEED, TRANSIT_RANGE, WALK_SPEED, DISCOVER_RANGE, getMap, resolveMove, type Anim,
+  INTERACT_RANGE, PICKUP_RANGE, RUN_SPEED, TRANSIT_RANGE, WALK_SPEED, DISCOVER_RANGE, collides, getMap, resolveMove, type Anim,
 } from "@ozu/shared";
 import { camState, input, local, useGame, type Remote } from "../state/store";
 import { client } from "../net/client";
 import { Character, type Motion } from "./Character";
 import { playerPositions } from "./labels";
+import { clearNav, nav } from "./nav";
 
 const EMOTE_ANIMS: Anim[] = ["wave", "dance", "clap"];
 export const emoteState = { until: 0, anim: "idle" as Anim };
@@ -49,10 +50,42 @@ export function LocalPlayer() {
     if (k.has("KeyA") || k.has("ArrowLeft")) ix -= 1;
     if (k.has("KeyD") || k.has("ArrowRight")) ix += 1;
     const mag = Math.min(1, Math.hypot(ix, iz));
-    const running = (input.run || k.has("ShiftLeft") || k.has("ShiftRight")) && mag > 0.1;
+    let running = (input.run || k.has("ShiftLeft") || k.has("ShiftRight")) && mag > 0.1;
     let speed = 0;
 
-    if (mag > 0.08) {
+    // Manual input always wins over tap-to-walk.
+    if (mag > 0.08 && nav.path.length) {
+      clearNav();
+      useGame.getState().set({ navTarget: null });
+    }
+
+    if (mag <= 0.08 && nav.path.length) {
+      emoteState.until = 0;
+      const [wx, wz] = nav.path[0];
+      const dx = wx - local.x, dz = wz - local.z;
+      const d = Math.hypot(dx, dz);
+      running = nav.run;
+      const sp = running ? RUN_SPEED : WALK_SPEED;
+      const step = Math.min(d, sp * dt);
+      const [nx, nz] = resolveMove(map, local.x, local.z, local.x + (dx / (d || 1)) * step, local.z + (dz / (d || 1)) * step);
+      const moved = Math.hypot(nx - local.x, nz - local.z);
+      local.x = nx;
+      local.z = nz;
+      speed = moved / dt;
+      let diff = Math.atan2(dx, dz) - local.ry;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      local.ry += diff * Math.min(1, dt * 10);
+      nav.stuckTime = moved < sp * dt * 0.2 ? nav.stuckTime + dt : 0;
+      if (d < 0.35 || nav.stuckTime > 0.8) {
+        nav.path.shift();
+        nav.stuckTime = 0;
+        if (!nav.path.length) {
+          const placeId = nav.placeId;
+          clearNav();
+          useGame.getState().set({ navTarget: null, ...(placeId ? { activePlace: placeId } : {}) });
+        }
+      }
+    } else if (mag > 0.08) {
       emoteState.until = 0;
       // Camera-relative direction
       const yaw = camState.yaw;
@@ -80,9 +113,18 @@ export function LocalPlayer() {
     group.current.rotation.y = local.ry;
 
     // Third-person camera with smoothing; pull in if a building is in the way would need raycasts — keep it simple.
-    const { yaw, pitch, dist } = camState;
+    const { yaw, pitch } = camState;
+    // Pull the camera in front of any building between it and the player.
+    let dist = camState.dist;
+    const hx = Math.sin(yaw) * Math.cos(pitch), hz = Math.cos(yaw) * Math.cos(pitch);
+    for (let t = 0.8; t <= camState.dist; t += 0.4) {
+      if (collides(map, local.x + hx * t, local.z + hz * t, 0.35) && 1.55 + Math.sin(pitch) * t < 14) {
+        dist = Math.max(1.6, t - 0.6);
+        break;
+      }
+    }
     camTarget.set(local.x, 1.55, local.z);
-    camPos.set(local.x + Math.sin(yaw) * Math.cos(pitch) * dist, 1.55 + Math.sin(pitch) * dist, local.z + Math.cos(yaw) * Math.cos(pitch) * dist);
+    camPos.set(local.x + hx * dist, 1.55 + Math.sin(pitch) * dist, local.z + hz * dist);
     camera.position.lerp(camPos, 1 - Math.exp(-dt * 10));
     camera.lookAt(camTarget);
 
@@ -184,7 +226,14 @@ function RemotePlayer({ id }: { id: string }) {
 
   if (!avatar) return null;
   return (
-    <group ref={group}>
+    <group
+      ref={group}
+      onClick={(e) => {
+        if (e.delta > 10) return;
+        e.stopPropagation();
+        useGame.getState().set({ selectedPlayer: id, panel: "player" });
+      }}
+    >
       <Character avatar={avatar} equipped={equipped} motion={motion} />
     </group>
   );

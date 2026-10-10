@@ -20,6 +20,8 @@ export interface PlayerRecord {
   hallChangedAt: number;
   /** Signed in with a Unilag email address. */
   student: boolean;
+  /** Day (YYYY-MM-DD) the player last checked their result at Senate. */
+  lastResultDay?: string;
   createdAt: number;
   updatedAt: number;
 }

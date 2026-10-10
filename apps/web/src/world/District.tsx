@@ -5,6 +5,7 @@ import { MAPS, type Box, type Building, type MapId } from "@ozu/shared";
 import { asphalt, danfoSide, facade, grass, ground, paving, plazaTiles, signTexture } from "./textures";
 import { daylight, gameHour } from "./time";
 import { CampusScene } from "./Campus";
+import { onBuildingTap } from "./Tap";
 
 /** Shared, mutable "night" amount (0 day … 1 night) written once per frame by <Lighting/>. */
 export const env = { night: 0 };
@@ -158,7 +159,7 @@ export function BuildingMesh({ b: raw }: { b: Building }) {
 
   if (b.kind === "transport") {
     return (
-      <group position={[b.x, 0, b.z]} rotation-y={b.facing}>
+      <group position={[b.x, 0, b.z]} rotation-y={b.facing} onClick={onBuildingTap(raw)}>
         {[-1, 1].flatMap((sx) => [-1, 1].map((sz) => (
           <mesh key={`${sx}${sz}`} geometry={cyl} material={M.metal} position={[sx * (b.w / 2 - 0.3), b.h / 2, sz * (b.d / 2 - 0.3)]} scale={[0.12, b.h, 0.12]} castShadow />
         )))}
@@ -178,7 +179,7 @@ export function BuildingMesh({ b: raw }: { b: Building }) {
   }
 
   return (
-    <group position={[b.x, 0, b.z]} rotation-y={b.facing}>
+    <group position={[b.x, 0, b.z]} rotation-y={b.facing} onClick={onBuildingTap(raw)}>
       <mesh geometry={box} material={mats} position={[0, b.h / 2, 0]} scale={[b.w, b.h, b.d]} castShadow receiveShadow />
       {/* Parapet */}
       <mesh geometry={box} material={M.roof} position={[0, b.h + 0.3, b.d / 2 - 0.1]} scale={[b.w, 0.6, 0.2]} castShadow />

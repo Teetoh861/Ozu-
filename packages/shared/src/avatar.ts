@@ -45,13 +45,19 @@ export interface Cosmetic {
   id: string;
   name: string;
   description: string;
+  /** Unlocked automatically at this rep (0 = not a rep reward). */
   repRequired: number;
+  /** Coin price in the Balogun Row shop (0 = not for sale). */
+  price: number;
 }
 
 export const COSMETICS: Cosmetic[] = [
-  { id: "shades", name: "Lekki Shades", description: "Dark shades for bright Lagos days.", repRequired: 20 },
-  { id: "aso-oke-cap", name: "Aso-oke Cap", description: "Hand-woven fila. Instant respect.", repRequired: 50 },
-  { id: "gold-chain", name: "Owambe Gold Chain", description: "For when the party is serious.", repRequired: 100 },
+  { id: "shades", name: "Lekki Shades", description: "Dark shades for bright Lagos days.", repRequired: 20, price: 0 },
+  { id: "aso-oke-cap", name: "Aso-oke Cap", description: "Hand-woven fila. Instant respect.", repRequired: 50, price: 0 },
+  { id: "gold-chain", name: "Owambe Gold Chain", description: "For when the party is serious.", repRequired: 100, price: 0 },
+  { id: "headphones", name: "Akoka Headphones", description: "Afrobeats on repeat, world on mute.", repRequired: 0, price: 40 },
+  { id: "bucket-hat", name: "Bucket Hat", description: "Lagoon Front approved.", repRequired: 0, price: 60 },
+  { id: "eagles-scarf", name: "Super Eagles Scarf", description: "Green-white-green, match day ready.", repRequired: 0, price: 80 },
 ];
 
 export const DEFAULT_AVATAR: Avatar = { body: "masc", skin: 2, hair: "lowcut", outfit: "ankara", palette: 0 };

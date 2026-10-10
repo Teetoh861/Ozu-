@@ -7,6 +7,7 @@ import { District } from "./District";
 import { Lighting } from "./Lighting";
 import { LocalPlayer, RemotePlayers, useBubbleSweep } from "./Players";
 import { LabelProjector } from "./labels";
+import { CaptureHook, NavMarker, TapPlane } from "./Tap";
 import { ChallengeItems, EventMarker, LocationMarkers, NPCs } from "./Activities";
 
 export function GameCanvas() {
@@ -40,6 +41,9 @@ export function GameCanvas() {
         <RemotePlayers />
         <LocalPlayer />
         <LabelProjector />
+        <TapPlane />
+        <NavMarker />
+        <CaptureHook />
       </Suspense>
       <AdaptiveDpr pixelated />
     </Canvas>

@@ -91,6 +91,9 @@ interface Props {
   backpack?: boolean;
 }
 
+const scarfGreen = new THREE.MeshStandardMaterial({ color: "#008751", roughness: 0.8 });
+const scarfWhite = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.8 });
+
 const backpackMats = ["#1b1240", "#c0262d", "#2a3d8f", "#0e8a5f", "#333333"].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 }));
 
 export function Character({ avatar, equipped, motion, castShadow = true, backpack = false }: Props) {
@@ -245,12 +248,33 @@ export function Character({ avatar, equipped, motion, castShadow = true, backpac
                 <mesh geometry={G.box} material={m.shades} scale={[0.12, 0.006, 0.006]} position={[0, 0.01, 0]} />
               </group>
             )}
+            {equipped === "headphones" && (
+              <group>
+                <mesh geometry={G.torus} material={m.shades} position={[0, 0.03, 0]} rotation={[0, Math.PI / 2, 0]} scale={[0.13, 0.13, 0.5]} />
+                {[-1, 1].map((sx) => (
+                  <mesh key={sx} geometry={G.cylClosed} material={m.accent} position={[sx * 0.115, -0.01, 0]} rotation={[0, 0, Math.PI / 2]} scale={[0.045, 0.03, 0.045]} />
+                ))}
+              </group>
+            )}
+            {equipped === "bucket-hat" && avatar.hair !== "gele" && (
+              <group position={[0, 0.1, -0.005]}>
+                <mesh geometry={G.cylClosed} material={m.accent} scale={[0.12, 0.08, 0.125]} castShadow={cs} />
+                <mesh geometry={G.cone} material={m.accent} position={[0, -0.04, 0]} scale={[0.19, 0.04, 0.19]} rotation={[Math.PI, 0, 0]} />
+              </group>
+            )}
             {equipped === "aso-oke-cap" && avatar.hair !== "gele" && (
               <mesh geometry={G.cylClosed} material={m.asoOke} position={[0.02, 0.12, -0.01]} rotation={[0.1, 0, -0.35]} scale={[0.11, 0.1, 0.115]} castShadow={cs} />
             )}
           </group>
           {backpack && (
             <mesh geometry={G.limb} material={backpackMats[(avatar.skin + avatar.palette) % backpackMats.length]} position={[0, 0.28, -0.17]} scale={[0.15, 0.1, 0.08]} castShadow={cs} />
+          )}
+          {equipped === "eagles-scarf" && (
+            <group position={[0, 0.44, 0.02]}>
+              <mesh geometry={G.torus} material={scarfGreen} rotation={[1.35, 0, 0]} scale={[0.1, 0.1, 0.9]} />
+              <mesh geometry={G.box} material={scarfGreen} position={[0.05, -0.12, 0.09]} scale={[0.045, 0.2, 0.015]} />
+              <mesh geometry={G.box} material={scarfWhite} position={[0.05, -0.12, 0.098]} scale={[0.015, 0.2, 0.01]} />
+            </group>
           )}
           {equipped === "gold-chain" && <mesh geometry={G.torus} material={m.gold} position={[0, 0.4, 0.04]} rotation={[1.25, 0, 0]} scale={[0.085, 0.085, 0.4]} />}
 

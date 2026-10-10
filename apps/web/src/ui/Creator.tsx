@@ -4,6 +4,8 @@ import {
 } from "@ozu/shared";
 import { useGame } from "../state/store";
 import { Logo } from "../App";
+import { StartChooser } from "./Places";
+import { persist } from "../state/store";
 
 const AvatarPreview = lazy(() => import("../world/Preview").then((m) => ({ default: m.AvatarPreview })));
 
@@ -12,6 +14,7 @@ export function Creator() {
   const [avatar, setAvatar] = useState<Avatar>(g.avatar);
   const [name, setName] = useState(g.name);
   const [hall, setHall] = useState<string | null>(g.hall);
+  const [choosing, setChoosing] = useState(false);
   const check = validateDisplayName(name);
   const patch = (p: Partial<Avatar>) => setAvatar((a) => ({ ...a, ...p }));
 
@@ -28,8 +31,25 @@ export function Creator() {
     e.preventDefault();
     if (!check.ok) return;
     g.setProfile(check.name, avatar, hall);
-    g.set({ phase: "playing" });
+    setChoosing(true);
   };
+
+  if (choosing)
+    return (
+      <main className="creator">
+        <header className="creator-top">
+          <Logo small />
+          <h1>Almost there, {name.trim()}!</h1>
+          <button className="btn ghost" onClick={() => setChoosing(false)}>Back</button>
+        </header>
+        <StartChooser
+          onPick={(m) => {
+            persist.set("ozu.startMap", m);
+            g.set({ startMap: m, map: m, phase: "playing" });
+          }}
+        />
+      </main>
+    );
 
   return (
     <main className="creator">
@@ -89,7 +109,7 @@ export function Creator() {
           </Group>
           <p className="muted small hall-note">Rep your hall: everything you earn on campus counts toward the hall leaderboard. You can switch hall once every 30 days.</p>
 
-          <button className="btn primary big" disabled={!check.ok}>Enter the district</button>
+          <button className="btn primary big" disabled={!check.ok}>Continue</button>
         </form>
       </div>
     </main>

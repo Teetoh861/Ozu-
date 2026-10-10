@@ -7,6 +7,11 @@ import { LabelLayer } from "../world/labels";
 import { playEmote } from "../world/Players";
 import { formatHour, gameHour } from "../world/time";
 import { Logo } from "../App";
+import { ActivityLayer, PlaceCard, PlacesSheet } from "./Places";
+import { Radio, STATIONS } from "./radio";
+import { capture } from "../world/Tap";
+import { navigateTo } from "../world/nav";
+import { multiplayerConfigured as mpConfigured } from "../net/client";
 import { ActivitiesPanel, HallsPanel, HelpPanel, Meter, PlayerCard, ProfilePanel, ReportModal, SettingsPanel } from "./Panels";
 import { useAmbientSound } from "./sound";
 
@@ -15,6 +20,15 @@ export default function Play() {
   const reportTarget = useGame((s) => s.reportTarget);
 
   useEffect(() => {
+    // Offline preview: start in the chosen district without a server.
+    if (!mpConfigured) {
+      const g = useGame.getState();
+      const sp = getMap(g.startMap).spawn;
+      local.x = sp.x;
+      local.z = sp.z;
+      camState.yaw = g.startMap === "unilag" ? 0 : Math.PI;
+      g.set({ map: g.startMap });
+    }
     void client.connect();
     const seen = localStorage.getItem("ozu.seenHelp");
     if (!seen) {
@@ -38,11 +52,17 @@ export default function Play() {
       <InteractionPrompt />
       <Chat />
       <EmoteBar />
+      <BottomDock />
       <TouchControls />
+      <PlaceCard />
+      <ActivityLayer />
       <Toasts />
       <TravelOverlay />
+      <PhotoPreview />
       {panel === "activities" && <ActivitiesPanel />}
       {panel === "halls" && <HallsPanel />}
+      {panel === "places" && <PlacesSheet />}
+      {panel === "radio" && <RadioPanel />}
       {panel === "profile" && <ProfilePanel />}
       {panel === "settings" && <SettingsPanel />}
       {panel === "help" && <HelpPanel />}
@@ -61,11 +81,11 @@ function useKeyboard() {
     const down = (e: KeyboardEvent) => {
       const g = useGame.getState();
       if (e.key === "Escape") {
-        g.set({ panel: null, chatOpen: false, reportTarget: null, selectedPlayer: null });
+        g.set({ panel: null, chatOpen: false, reportTarget: null, selectedPlayer: null, activePlace: null, activity: null });
         input.keys.clear();
         return;
       }
-      if (typing(e) || g.panel || g.reportTarget) return;
+      if (typing(e) || g.panel || g.reportTarget || g.activity) return;
       if (e.key === "Enter") {
         e.preventDefault();
         g.set({ chatOpen: true });
@@ -135,7 +155,7 @@ function ConnectionBanner() {
         <button className="btn small ghost" onClick={() => useGame.getState().set({ phase: "create" })}>Change name</button>
       </div>
     );
-  return <div className="banner warn" role="status">{conn === "connecting" ? "Connecting to Lagos…" : "Connection lost — reconnecting…"}</div>;
+  return <div className="banner warn" role="status">{conn === "connecting" ? "Connecting… (the free server can take up to a minute to wake up)" : "Connection lost — reconnecting…"}</div>;
 }
 
 function ChallengeHud() {
@@ -162,10 +182,11 @@ function EventBanner() {
   const dist = Math.round(Math.hypot(event.x - local.x, event.z - local.z));
   const there = dist <= 7;
   return (
-    <div className={`event-banner ${there ? "there" : ""}`} role="status">
+    <div className={`event-banner ${there ? "there" : ""}`} role="status" style={{ pointerEvents: "auto" }}>
       <strong>🔔 {event.venue}</strong>
       <span>{there ? "You're in class — stay here!" : `${dist} m away`}</span>
       <span className="timer">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</span>
+      {!there && <button className="btn small" onClick={() => navigateTo(event.x, event.z)}>🏃 Run there</button>}
     </div>
   );
 }
@@ -175,8 +196,8 @@ function TravelOverlay() {
   if (!traveling) return null;
   return (
     <div className="travel" role="status" aria-live="polite">
-      <div className="travel-bus">🚌</div>
-      <p>{traveling === "unilag" ? "Danfo dey go Akoka… Unilag!" : "Danfo dey go Ozu District…"}</p>
+      <div className="travel-bus">{traveling === useGame.getState().map && traveling === "ozu" ? "🛺" : "🚌"}</div>
+      <p>{traveling === useGame.getState().map ? (traveling === "unilag" ? "Campus shuttle dey carry you…" : "Keke dey carry you…") : traveling === "unilag" ? "Danfo dey go Akoka… Unilag!" : "Danfo dey go Ozu…"}</p>
       <div className="spinner" />
     </div>
   );
@@ -393,7 +414,7 @@ function TouchControls() {
           <div className="knob" style={{ transform: `translate(${stick.dx}px, ${stick.dy}px)` }} />
         </div>
       ) : (
-        <div className="joystick-hint" aria-hidden>Drag here to walk</div>
+        <div className="joystick-hint" aria-hidden>Tap to walk · drag here to steer</div>
       )}
       <button
         className={`run-btn ${run ? "on" : ""}`}
@@ -403,5 +424,163 @@ function TouchControls() {
         {run ? "🏃 Running" : "🚶 Walking"}
       </button>
     </>
+  );
+}
+
+/** Big, thumb-friendly actions: Places, photo and radio. */
+function BottomDock() {
+  const set = useGame((s) => s.set);
+  const radio = useGame((s) => s.radio);
+  return (
+    <div className="dock">
+      <button className="dock-btn primary" onClick={() => set({ panel: "places" })}>📍<span>Places</span></button>
+      <button className="dock-btn" onClick={() => void takePhoto()}>📸<span>Snap</span></button>
+      <button className={`dock-btn ${radio ? "on" : ""}`} onClick={() => set({ panel: "radio" })}>📻<span>Radio</span></button>
+    </div>
+  );
+}
+
+// ---------------- Photo ----------------
+
+let photoUrl: string | null = null;
+const photoListeners = new Set<() => void>();
+
+async function takePhoto() {
+  const shot = capture.take?.();
+  if (!shot) return useGame.getState().toast("Couldn't take a photo on this device.", "warn");
+  const img = new Image();
+  img.src = shot;
+  await img.decode();
+  const g = useGame.getState();
+  const c = document.createElement("canvas");
+  const w = Math.min(1440, img.width), h = Math.round((img.height / img.width) * w);
+  c.width = w;
+  c.height = h + Math.round(w * 0.09);
+  const x = c.getContext("2d")!;
+  x.drawImage(img, 0, 0, w, h);
+  const bar = c.height - h;
+  const grad = x.createLinearGradient(0, h, w, c.height);
+  grad.addColorStop(0, "#1b1240");
+  grad.addColorStop(1, "#3a1838");
+  x.fillStyle = grad;
+  x.fillRect(0, h, w, bar);
+  const fs = Math.round(bar * 0.38);
+  x.strokeStyle = "#ff7a1a";
+  x.lineWidth = fs * 0.22;
+  x.beginPath();
+  x.arc(bar * 0.5, h + bar / 2, fs * 0.55, 0, Math.PI * 2);
+  x.stroke();
+  x.fillStyle = "#f6c700";
+  x.beginPath();
+  x.arc(bar * 0.5, h + bar / 2, fs * 0.16, 0, Math.PI * 2);
+  x.fill();
+  x.fillStyle = "#fff";
+  x.font = `700 ${fs}px "Space Grotesk", sans-serif`;
+  x.textBaseline = "middle";
+  x.fillText("OZU", bar * 0.95, h + bar / 2);
+  x.font = `500 ${Math.round(fs * 0.62)}px Inter, sans-serif`;
+  x.fillStyle = "#ddd6ee";
+  x.textAlign = "right";
+  x.fillText(`${g.name} · ${getMap(g.map).name} · ozu.vercel.app`, w - bar * 0.4, h + bar / 2);
+  photoUrl = c.toDataURL("image/jpeg", 0.9);
+  photoListeners.forEach((f) => f());
+}
+
+function PhotoPreview() {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const f = () => setUrl(photoUrl);
+    photoListeners.add(f);
+    return () => {
+      photoListeners.delete(f);
+    };
+  }, []);
+  if (!url) return null;
+  const close = () => {
+    photoUrl = null;
+    setUrl(null);
+  };
+  const share = async () => {
+    const blob = await (await fetch(url)).blob();
+    const file = new File([blob], "ozu-snap.jpg", { type: "image/jpeg" });
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    if (nav.share && nav.canShare?.({ files: [file] })) {
+      try {
+        await nav.share({ files: [file], title: "Ozu", text: "Catch me on Ozu 👉 https://ozu.vercel.app" });
+      } catch {}
+    } else {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ozu-snap.jpg";
+      a.click();
+    }
+  };
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div className="modal photo" role="dialog" aria-label="Your snap">
+        <header>
+          <h2>Your snap 📸</h2>
+          <button className="icon-btn" onClick={close} aria-label="Close">✕</button>
+        </header>
+        <div className="modal-body">
+          <img src={url} alt="Your Ozu snapshot" className="snap" />
+          <div className="row gap">
+            <button className="btn primary big" onClick={() => void share()}>Share</button>
+            <button className="btn big" onClick={close}>Close</button>
+          </div>
+          <p className="muted small">Post it on WhatsApp, Instagram or TikTok and bring your people to Ozu.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- Radio ----------------
+
+let radioInstance: Radio | null = null;
+
+function RadioPanel() {
+  const { radio, set } = useGame();
+  const [vol, setVol] = useState(0.5);
+  const tune = (id: string | null) => {
+    radioInstance?.stop();
+    radioInstance = null;
+    if (id) {
+      radioInstance = new Radio(id, vol);
+      radioInstance.start();
+    }
+    set({ radio: id });
+    if (id && useGame.getState().settings.captions) useGame.getState().toast(`📻 Now playing: ${STATIONS.find((s) => s.id === id)?.name}`, "info");
+  };
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && set({ panel: null })}>
+      <div className="modal" role="dialog" aria-label="Radio">
+        <header>
+          <h2>📻 Ozu Radio</h2>
+          <button className="icon-btn" onClick={() => set({ panel: null })} aria-label="Close">✕</button>
+        </header>
+        <div className="modal-body">
+          <ul className="stations">
+            {STATIONS.map((s) => (
+              <li key={s.id}>
+                <button className={`station ${radio === s.id ? "on" : ""}`} onClick={() => tune(radio === s.id ? null : s.id)}>
+                  <span className="st-icon">{radio === s.id ? "🔊" : "▶️"}</span>
+                  <span>
+                    <strong>{s.name}</strong>
+                    <small>{s.tagline}</small>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <label className="setting">
+            <span>Volume</span>
+            <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => { setVol(+e.target.value); radioInstance?.setVolume(+e.target.value); }} />
+          </label>
+          {radio && <button className="btn" onClick={() => tune(null)}>Turn radio off</button>}
+          <p className="muted small">Original grooves made for Ozu. Live Lagos stations are coming as we sign licensing partners.</p>
+        </div>
+      </div>
+    </div>
   );
 }

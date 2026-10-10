@@ -1,4 +1,5 @@
-import { getMap, type Anim, type ClientMessage, type MapId, type ServerMessage } from "@ozu/shared";
+import { getMap, placeFor, type ActionId, type Anim, type ClientMessage, type MapId, type ServerMessage } from "@ozu/shared";
+import { clearNav } from "../world/nav";
 import { camState, local, useGame, persist } from "../state/store";
 import { getAccessToken } from "./auth";
 
@@ -32,6 +33,8 @@ class GameClient {
       this.send({
         t: "hello", guestToken: persist.get<string | undefined>("ozu.guestToken", undefined), accessToken: accessToken ?? undefined,
         name: s.name, avatar: s.avatar, ageGroup: s.ageGroup ?? "18+", hall: s.hall,
+        // Reconnects return you to the district you were in; first join uses your chosen start.
+        start: s.meId ? s.map : s.startMap,
       });
     };
     ws.onmessage = (e) => {
@@ -99,6 +102,39 @@ class GameClient {
       camState.yaw = to === "unilag" ? 0 : Math.PI;
       useGame.getState().set({ map: to, traveling: null, players: {}, items: [], event: null });
     }, 1400);
+  }
+
+  /** Fast travel to a place (keke / campus shuttle / danfo across districts). */
+  goto(placeId: string) {
+    const g = useGame.getState();
+    const place = placeFor(placeId);
+    if (!place || g.traveling) return;
+    clearNav();
+    g.set({ traveling: place.map, activePlace: null, panel: null, navTarget: null, prompt: null });
+    if (this.online) {
+      this.send({ t: "goto", place: placeId });
+      window.setTimeout(() => {
+        if (useGame.getState().traveling) useGame.getState().set({ traveling: null });
+      }, 8000);
+      return;
+    }
+    window.setTimeout(() => {
+      const loc = getMap(place.map).locations.find((l) => l.id === placeId)!;
+      local.x = loc.x;
+      local.z = loc.z + 2;
+      const changed = useGame.getState().map !== place.map;
+      if (changed) camState.yaw = place.map === "unilag" ? 0 : Math.PI;
+      useGame.getState().set({ map: place.map, traveling: null, activePlace: placeId, ...(changed ? { players: {}, items: [], event: null } : {}) });
+    }, 1200);
+  }
+
+  act(action: ActionId, place: string, data?: Record<string, unknown>) {
+    if (!this.online) {
+      useGame.getState().toast("Activities need the game server — you're offline right now.", "warn");
+      return false;
+    }
+    this.send({ t: "act", action, place, data });
+    return true;
   }
 
   retry() {
@@ -234,6 +270,25 @@ class GameClient {
         return;
       case "halls":
         g.set({ halls: m.halls });
+        return;
+      case "arrived":
+        g.set({ traveling: null, activePlace: m.place });
+        return;
+      case "quiz": {
+        const a = g.activity;
+        g.set({ activity: { kind: "quiz", place: a && "place" in a ? a.place : "", id: m.id, questions: m.questions } });
+        return;
+      }
+      case "quizResult": {
+        const a = g.activity;
+        if (a?.kind === "quiz") g.set({ activity: { ...a, result: { correct: m.correct, answers: m.answers } } });
+        return;
+      }
+      case "result":
+        g.set({ activity: { kind: "result", grade: m.grade, line: m.line } });
+        return;
+      case "compliment":
+        if (!g.blocked.includes(m.from)) g.toast(`💌 ${m.name}: "${m.line}"`, "reward");
         return;
       case "pong":
         g.set({ ping: Math.round(performance.now() - m.n) });

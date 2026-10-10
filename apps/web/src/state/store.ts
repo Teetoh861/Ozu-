@@ -8,7 +8,16 @@ import {
 export type Phase = "landing" | "create" | "playing";
 export type Conn = "offline" | "connecting" | "online" | "reconnecting" | "failed";
 export type Quality = "high" | "low";
-export type Panel = null | "activities" | "profile" | "settings" | "help" | "guidelines" | "player" | "halls";
+export type Panel = null | "activities" | "profile" | "settings" | "help" | "guidelines" | "player" | "halls" | "places" | "radio";
+
+export type Activity =
+  | { kind: "food"; place: string }
+  | { kind: "shop"; place: string }
+  | { kind: "quiz"; place: string; id: string; questions: { q: string; options: string[] }[]; result?: { correct: number; answers: number[] } }
+  | { kind: "result"; grade: string; line: string }
+  | { kind: "chill"; place: string; until: number }
+  | { kind: "penalty"; place: string }
+  | { kind: "shot"; place: string };
 
 export interface Remote extends PublicPlayer {
   /** Interpolation target from the latest snapshot. */
@@ -86,6 +95,12 @@ interface State {
   student: boolean;
   event: LiveEvent | null;
   halls: HallStanding[];
+  startMap: MapId;
+  /** Place card currently open. */
+  activePlace: string | null;
+  activity: Activity | null;
+  navTarget: { x: number; z: number } | null;
+  radio: string | null;
   conn: Conn;
   connError: string | null;
   name: string;
@@ -127,6 +142,11 @@ export const useGame = create<State>((set, get) => ({
   student: false,
   event: null,
   halls: [],
+  startMap: LS.get<MapId>("ozu.startMap", "ozu"),
+  activePlace: null,
+  activity: null,
+  navTarget: null,
+  radio: null,
   conn: "offline",
   connError: null,
   name: LS.get("ozu.name", ""),

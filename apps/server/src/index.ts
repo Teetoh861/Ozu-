@@ -1,7 +1,7 @@
 import http from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
-  DEFAULT_AVATAR, HALLS, LECTURE_INTERVAL_SECONDS, MAP_IDS, SNAPSHOT_HZ, getMap, sanitizeAvatar, validateDisplayName,
+  DEFAULT_AVATAR, GOTO_COOLDOWN_MS, HALLS, placeFor, LECTURE_INTERVAL_SECONDS, MAP_IDS, SNAPSHOT_HZ, getMap, sanitizeAvatar, validateDisplayName,
   type ClientMessage, type HallStanding, type MapId, type ServerMessage,
 } from "@ozu/shared";
 import { assertProductionConfig, config } from "./config";
@@ -209,7 +209,7 @@ function onConnection(ws: WebSocket, ip: string) {
           return ws.close(4002, result.error.slice(0, 120));
         }
         if (ws.readyState !== ws.OPEN) return;
-        district = districtFor("ozu");
+        district = districtFor(msg.start === "unilag" ? "unilag" : "ozu");
         session = new Session(conn, result.record, result.account);
         district.join(session, result.guestToken);
       } catch (e) {
@@ -219,6 +219,23 @@ function onConnection(ws: WebSocket, ip: string) {
       } finally {
         helloPending = false;
       }
+      return;
+    }
+    if (msg.t === "goto") {
+      const place = placeFor(String(msg.place));
+      const now = Date.now();
+      if (!place || now < (session.cooldowns.get("goto") ?? 0)) return;
+      session.cooldowns.set("goto", now + GOTO_COOLDOWN_MS);
+      if (place.map === district!.map.id) return district!.goto(session, place);
+      // Cross-district: ride the danfo straight to the place.
+      const from = district!;
+      await from.leave(session);
+      if (ws.readyState !== ws.OPEN) return;
+      const loc = getMap(place.map).locations.find((l) => l.id === place.id)!;
+      district = districtFor(place.map);
+      district.join(session, null, { x: loc.x, z: loc.z });
+      conn.send({ t: "arrived", place: place.id });
+      log("info", "player_travel", { player: session.id, from: from.map.id, to: place.map, via: "goto" });
       return;
     }
     if (msg.t === "travel") {

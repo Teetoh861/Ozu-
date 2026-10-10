@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { CHALLENGE_GOAL, MAPS, LECTURE_VENUES, containsProfanity, validateDisplayName, cleanChat, collides, type ServerMessage } from "@ozu/shared";
+import { CHALLENGE_GOAL, MAPS, LECTURE_VENUES, QUIZ_BANK, containsProfanity, validateDisplayName, cleanChat, collides, type ServerMessage } from "@ozu/shared";
 const LOCATIONS = MAPS.ozu.locations;
 const BUILDINGS = MAPS.ozu.buildings;
 import { District, Session, type Conn } from "../src/game";
@@ -228,5 +228,77 @@ describe("safeguards", () => {
     await d.handle(a.s, { t: "report", targetId: "b", reason: "harassment" });
     const [r] = await store.listReports();
     expect(r.priority).toBe("high");
+  });
+});
+
+describe("places & activities", () => {
+  let campus: District;
+  beforeEach(() => {
+    campus = new District("u2", "unilag", store, { guestChat: true, max: 10 });
+  });
+  function at(placeId: string, coins = 0) {
+    const c = fakeConn();
+    const s = new Session(c, record("p" + Math.random()), "guest");
+    s.record.progress.coins = coins;
+    campus.join(s, null);
+    const loc = MAPS.unilag.locations.find((l) => l.id === placeId)!;
+    s.x = loc.x; s.z = loc.z;
+    return { s, c };
+  }
+
+  it("fast-travels within the campus", () => {
+    const { s, c } = at("u-gate");
+    campus.goto(s, { id: "u-library", map: "unilag", emoji: "", actions: ["quiz"] });
+    expect(Math.hypot(s.x - 5, s.z + 14)).toBeLessThan(4);
+    expect(c.sent.some((m) => m.t === "arrived")).toBe(true);
+  });
+
+  it("sells food only when you can afford it", async () => {
+    const { s } = at("u-buka", 20);
+    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { item: "jollof" } });
+    expect(s.record.progress.coins).toBe(5);
+    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { item: "jollof" } });
+    expect(s.record.progress.coins).toBe(5);
+  });
+
+  it("grades the library quiz on the server", async () => {
+    const { s, c } = at("u-library");
+    await campus.handle(s, { t: "act", action: "quiz", place: "u-library" });
+    const q = c.sent.find((m) => m.t === "quiz");
+    expect(q && q.t === "quiz" && q.questions).toHaveLength(3);
+    const answers = s.quiz!.questions.map((i) => QUIZ_BANK[i].answer);
+    await campus.handle(s, { t: "act", action: "quiz", place: "u-library", data: { id: s.quiz!.id, answers } });
+    expect(s.record.progress.coins).toBe(15);
+  });
+
+  it("refuses activities far from the place", async () => {
+    const { s } = at("u-gate", 50);
+    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { item: "suya" } });
+    // u-gate is ~8m from the buka: allowed. Move far away and retry.
+    s.x = -40; s.z = -40;
+    const before = s.record.progress.coins;
+    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { item: "suya" } });
+    expect(s.record.progress.coins).toBe(before);
+  });
+
+  it("requires the chill timer to run before rewarding", async () => {
+    const { s } = at("u-lagoon");
+    await campus.handle(s, { t: "act", action: "chill", place: "u-lagoon", data: { phase: "start" } });
+    await campus.handle(s, { t: "act", action: "chill", place: "u-lagoon", data: { phase: "done" } });
+    expect(s.record.progress.rep).toBe(0);
+  });
+});
+
+describe("shop", () => {
+  it("buys and equips a cosmetic for coins, without auto-unlocking shop items", async () => {
+    const a = join("a");
+    a.s.record.progress.coins = 100;
+    const loc = MAPS.ozu.locations.find((l) => l.id === "market")!;
+    a.s.x = loc.x; a.s.z = loc.z;
+    await d.handle(a.s, { t: "act", action: "shop", place: "market", data: { item: "headphones" } });
+    expect(a.s.record.progress.coins).toBe(60);
+    expect(a.s.record.progress.unlocked).toContain("headphones");
+    expect(a.s.record.progress.equipped).toBe("headphones");
+    expect(a.s.record.progress.unlocked).not.toContain("bucket-hat");
   });
 });

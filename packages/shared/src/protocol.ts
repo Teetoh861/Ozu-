@@ -1,5 +1,6 @@
 import type { Avatar } from "./avatar";
 import type { MapId } from "./world";
+import type { ActionId } from "./places";
 
 export type Anim = "idle" | "walk" | "run" | "wave" | "dance" | "clap" | "sit";
 export const EMOTES = ["wave", "dance", "clap"] as const;
@@ -69,8 +70,10 @@ export const REPORT_REASONS = ["harassment", "hate", "sexual", "spam", "cheating
 export type ReportReason = (typeof REPORT_REASONS)[number];
 
 export type ClientMessage =
-  | { t: "hello"; guestToken?: string; accessToken?: string; name: string; avatar: Avatar; ageGroup: AgeGroup; hall: string | null }
+  | { t: "hello"; guestToken?: string; accessToken?: string; name: string; avatar: Avatar; ageGroup: AgeGroup; hall: string | null; start?: MapId }
   | { t: "travel"; to: MapId }
+  | { t: "goto"; place: string }
+  | { t: "act"; action: ActionId; place: string; data?: Record<string, unknown> }
   | { t: "move"; x: number; z: number; ry: number; anim: Anim }
   | { t: "chat"; text: string }
   | { t: "emote"; emote: Emote }
@@ -101,6 +104,11 @@ export type ServerMessage =
     }
   | { t: "event"; event: CampusEvent | null; result?: { venue: string; attended: number; you: boolean } }
   | { t: "halls"; halls: HallStanding[] }
+  | { t: "arrived"; place: string }
+  | { t: "quiz"; id: string; questions: { q: string; options: string[] }[] }
+  | { t: "quizResult"; correct: number; answers: number[] }
+  | { t: "result"; grade: string; line: string }
+  | { t: "compliment"; from: string; name: string; line: string }
   | { t: "snap"; p: [string, number, number, number, Anim][] }
   | { t: "join"; player: PublicPlayer }
   | { t: "leave"; id: string }

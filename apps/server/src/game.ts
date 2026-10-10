@@ -3,6 +3,8 @@ import {
   CHALLENGE_GOAL, CHALLENGE_MAX_ITEMS, COSMETICS, DAILY_GREET_REWARD_CAP, DISCOVER_RANGE, EMOTES,
   INTERACT_RANGE, LECTURE_RADIUS, LECTURE_SECONDS, LECTURE_VENUES, PICKUP_RANGE, REPORT_REASONS, REWARDS,
   RUN_SPEED, SPEED_TOLERANCE, cleanChat, collides, clampToWorld, getMap, resolveMove,
+  CHILL_SECONDS, FOODS, PLACE_RANGE, QUIZ_BANK, QUIZ_COINS_PER_CORRECT, QUIZ_LENGTH, RESULTS, SHOT_LINES, placeFor,
+  type Place,
   type Anim, type CampusEvent, type ChallengeItem, type ClientMessage, type Emote, type HallStanding, type MapDef,
   type MapId, type PublicPlayer, type Reward, type ServerMessage,
 } from "@ozu/shared";
@@ -36,6 +38,11 @@ export class Session {
     report: new TokenBucket(3, 1 / 60),
     travel: new TokenBucket(2, 1 / 10),
   };
+  /** Activity cooldowns: key -> timestamp when available again. */
+  cooldowns = new Map<string, number>();
+  /** Timed activities in progress (chill, penalty): key -> start time. */
+  started = new Map<string, number>();
+  quiz: { id: string; questions: number[] } | null = null;
   constructor(public conn: Conn, public record: PlayerRecord, public account: "guest" | "member") {}
 
   /** Place the player near (x, z), spreading players out so they don't stack. */
@@ -195,7 +202,7 @@ export class District {
     p.rep += base.rep;
     // Everything earned on campus also counts for your hall.
     if (this.map.id === "unilag" && s.record.hall) p.hallPoints += base.rep;
-    const newly = COSMETICS.filter((c) => p.rep >= c.repRequired && !p.unlocked.includes(c.id));
+    const newly = COSMETICS.filter((c) => c.repRequired > 0 && p.rep >= c.repRequired && !p.unlocked.includes(c.id));
     for (const c of newly) p.unlocked.push(c.id);
     const reward: Reward = { coins: base.coins, rep: base.rep, reason };
     s.conn.send({ t: "progress", progress: p, reward });
@@ -386,6 +393,9 @@ export class District {
         return;
       }
 
+      case "act":
+        return this.act(s, msg);
+
       case "equip": {
         const p = s.record.progress;
         if (msg.cosmeticId !== null && !p.unlocked.includes(msg.cosmeticId)) return;
@@ -394,6 +404,145 @@ export class District {
         this.broadcast({ t: "player", player: s.public() });
         await this.persist(s);
         return;
+      }
+    }
+  }
+
+  /** Fast travel within this district (keke / campus shuttle). */
+  goto(s: Session, place: Place) {
+    const loc = this.map.locations.find((l) => l.id === place.id);
+    if (!loc) return;
+    s.placeNear(this.map, loc.x, loc.z);
+    s.conn.send({ t: "correct", x: s.x, z: s.z });
+    s.conn.send({ t: "arrived", place: place.id });
+    this.moved = true;
+  }
+
+  private cooldown(s: Session, key: string, ms: number): boolean {
+    const until = s.cooldowns.get(key) ?? 0;
+    const now = Date.now();
+    if (now < until) {
+      this.notice(s, `Give it ${Math.ceil((until - now) / 1000)}s before doing that again.`, "info");
+      return false;
+    }
+    s.cooldowns.set(key, now + ms);
+    return true;
+  }
+
+  private nearPlace(s: Session, placeId: string): Place | null {
+    const place = placeFor(placeId);
+    const loc = this.map.locations.find((l) => l.id === placeId);
+    if (!place || !loc || place.map !== this.map.id) return null;
+    if (Math.hypot(loc.x - s.x, loc.z - s.z) > PLACE_RANGE + 1) {
+      this.notice(s, "Get a bit closer to do that.", "info");
+      return null;
+    }
+    return place;
+  }
+
+  private async act(s: Session, msg: Extract<ClientMessage, { t: "act" }>) {
+    if (!s.limits.action.take()) return;
+    const place = this.nearPlace(s, msg.place);
+    if (!place || !place.actions.includes(msg.action)) return;
+    const data = (msg.data ?? {}) as Record<string, unknown>;
+    const p = s.record.progress;
+    switch (msg.action) {
+      case "food": {
+        const food = FOODS.find((f) => f.id === data.item);
+        if (!food) return;
+        if (p.coins < food.price) return this.notice(s, `You need ${food.price} coins for ${food.name}.`, "info");
+        p.coins -= food.price;
+        const rep = (s.cooldowns.get("food-rep") ?? 0) < Date.now() ? 1 : 0;
+        if (rep) s.cooldowns.set("food-rep", Date.now() + 120_000);
+        p.rep += rep;
+        s.conn.send({ t: "progress", progress: p, reward: { coins: -food.price, rep, reason: `${food.emoji} ${food.name} — enjoy!` } });
+        s.anim = "clap";
+        this.moved = true;
+        await this.persist(s);
+        return;
+      }
+      case "quiz": {
+        if (Array.isArray(data.answers)) {
+          const q = s.quiz;
+          if (!q || data.id !== q.id) return;
+          s.quiz = null;
+          const answers = q.questions.map((i) => QUIZ_BANK[i].answer);
+          const correct = answers.filter((a, i) => (data.answers as unknown[])[i] === a).length;
+          s.conn.send({ t: "quizResult", correct, answers });
+          if (correct > 0) await this.grant(s, { coins: correct * QUIZ_COINS_PER_CORRECT, rep: correct }, `Quiz: ${correct}/${QUIZ_LENGTH} correct`);
+          return;
+        }
+        if (!this.cooldown(s, "quiz", 90_000)) return;
+        const pool = [...QUIZ_BANK.keys()].sort(() => Math.random() - 0.5).slice(0, QUIZ_LENGTH);
+        s.quiz = { id: randomUUID().slice(0, 8), questions: pool };
+        s.conn.send({ t: "quiz", id: s.quiz.id, questions: pool.map((i) => ({ q: QUIZ_BANK[i].q, options: QUIZ_BANK[i].options })) });
+        return;
+      }
+      case "result": {
+        const day = new Date().toISOString().slice(0, 10);
+        if (s.record.lastResultDay === day) return this.notice(s, "Senate has released only one result today. Come back tomorrow!", "info");
+        s.record.lastResultDay = day;
+        const r = RESULTS[Math.floor(Math.random() * RESULTS.length)];
+        s.conn.send({ t: "result", grade: r.grade, line: r.line });
+        await this.grant(s, { coins: 5, rep: 2 }, "Checked your result");
+        return;
+      }
+      case "chill":
+      case "penalty": {
+        const key = `${msg.action}:${place.id}`;
+        if (data.phase === "start") {
+          if (!this.cooldown(s, msg.action, msg.action === "chill" ? 60_000 : 45_000)) return;
+          s.started.set(key, Date.now());
+          if (msg.action === "chill") {
+            s.anim = "sit";
+            this.moved = true;
+          }
+          return;
+        }
+        const at = s.started.get(key);
+        s.started.delete(key);
+        const minMs = msg.action === "chill" ? CHILL_SECONDS * 1000 - 500 : 5000;
+        if (!at || Date.now() - at < minMs) return;
+        if (msg.action === "chill") return this.grant(s, { coins: 2, rep: 2 }, `Caught vibes at ${this.map.locations.find((l) => l.id === place.id)?.name}`);
+        const goals = Math.max(0, Math.min(5, Math.floor(Number(data.goals) || 0)));
+        if (goals === 0) return this.notice(s, "No goals this time — the keeper was on fire!", "info");
+        return this.grant(s, { coins: goals * 2, rep: goals >= 3 ? 2 : 1 }, `Scored ${goals}/5 penalties`);
+      }
+      case "shot": {
+        const idx = Number(data.line);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= SHOT_LINES.length) return;
+        let target: Session | null = null, best = 8;
+        for (const o of this.sessions.values()) {
+          if (o === s || this.blockedBetween(o, s)) continue;
+          const d = Math.hypot(o.x - s.x, o.z - s.z);
+          if (d < best) { best = d; target = o; }
+        }
+        if (!target) return this.notice(s, "Nobody close enough. Walk up to someone first!", "info");
+        if (!this.cooldown(s, "shot", 30_000)) return;
+        target.conn.send({ t: "compliment", from: s.id, name: s.record.name, line: SHOT_LINES[idx] });
+        this.notice(s, `Sent to ${target.record.name}: "${SHOT_LINES[idx]}"`, "info");
+        return;
+      }
+      case "shop": {
+        const item = COSMETICS.find((c) => c.id === data.item && c.price > 0);
+        if (!item) return;
+        if (p.unlocked.includes(item.id)) return this.notice(s, "You already own that.", "info");
+        if (p.coins < item.price) return this.notice(s, `You need ${item.price} coins for the ${item.name}.`, "info");
+        p.coins -= item.price;
+        p.unlocked.push(item.id);
+        p.equipped = item.id;
+        s.conn.send({ t: "progress", progress: p, reward: { coins: -item.price, rep: 0, reason: `Bought ${item.name} — you're wearing it!` } });
+        this.broadcast({ t: "player", player: s.public() });
+        await this.persist(s);
+        return;
+      }
+      case "dance": {
+        s.anim = "dance";
+        this.moved = true;
+        this.broadcast({ t: "emote", id: s.id, emote: "dance" }, undefined, (r) => !this.blockedBetween(r, s));
+        if ((s.cooldowns.get("dance") ?? 0) > Date.now()) return;
+        s.cooldowns.set("dance", Date.now() + 60_000);
+        return this.grant(s, { coins: 2, rep: 1 }, "Good energy on the dance floor");
       }
     }
   }

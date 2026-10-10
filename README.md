@@ -33,6 +33,24 @@ Ozu is a multiplayer, Lagos-inspired social-life simulation that runs in the bro
 - **Verified students**: members who sign in with a `@live.unilag.edu.ng` or `@unilag.edu.ng` email get a 🎓 badge. This needs Supabase accounts to be enabled.
 - **Age policy 16+**: players choose an age group on entry, and under-16s are turned away. For under-18s, any report involving them is marked high priority and sorted to the top of the moderation queue. For everyone, phone numbers, links and @handles are hidden in chat.
 
+## Easy play — v0.3
+
+- **Choose your start**: begin in Ozu (Lagos) or Unilag (Akoka) right after creating your character.
+- **Tap to walk**: tap the ground and your character walks there, routing around buildings with A* pathfinding. Tap a building to go to it and see what you can do there.
+- **📍 Places**: every spot in both districts, one tap away. A keke (Ozu) or the campus shuttle (Unilag) takes you there instantly, and a danfo crosses between districts.
+- **Things to do at each place** (rewards are validated on the server, with cooldowns):
+  - Library quiz
+  - Buka food menu (coins sink)
+  - Sports Centre penalty shootout
+  - Senate "check your result"
+  - Lagoon Front and Plaza chill
+  - Love Garden "shoot your shot" (pre-written lines only)
+  - Balogun Row drip shop (headphones, bucket hat, Super Eagles scarf)
+  - Shrine Lounge dance
+- **📸 Snap & share**: captures the scene with an Ozu-branded caption bar, then opens the native share sheet or downloads the image.
+- **📻 Ozu Radio**: three original, procedurally generated stations (Afro Vibes, Amapiano, Highlife). They are royalty-free, and licensed live streams can be added as stations later.
+- **Lecture rush**: has a **Run there** button that auto-runs you to class.
+
 ## Run locally
 
 ```bash
