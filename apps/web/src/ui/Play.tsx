@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { WORLD_HALF, getMap, type Anim } from "@ozu/shared";
+import { QUICK_CHAT, WORLD_HALF, getMap, type Anim } from "@ozu/shared";
 import { camState, input, local, useGame } from "../state/store";
 import { client, multiplayerConfigured } from "../net/client";
 import { GameCanvas } from "../world/GameCanvas";
@@ -250,6 +250,11 @@ function Chat() {
                 <button className="chat-name" onClick={() => c.from !== meId && set({ selectedPlayer: c.from, panel: "player" })}>{c.name}</button>
                 <span>{c.text}</span>
               </p>
+            ))}
+          </div>
+          <div className="quick-chat" aria-label="Quick chat">
+            {QUICK_CHAT.map((q) => (
+              <button key={q} className="qc" disabled={conn !== "online"} onClick={() => client.send({ t: "chat", text: q })}>{q}</button>
             ))}
           </div>
           <form onSubmit={send} className="chat-form">

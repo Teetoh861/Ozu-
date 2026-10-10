@@ -57,6 +57,18 @@ Ozu is a multiplayer, Lagos-inspired social-life simulation that runs in the bro
 - **Campus additions**: the J.F. Ade Ajayi Auditorium, the Radio 103.1 FM studio (tap it to tune in), Eni Njoku and Fagunwa halls, and all 13 halls of residence in the hall picker and leaderboard.
 - **Campus moments**: Mr & Miss UNILAG, Hall Week, a Jambite welcome and inter-hall matches rotate in between lecture rushes. New players on campus show a 🐣 Jambite tag until they reach 30 rep.
 
+## Campus food, haggling & banter — v0.5
+
+- **New Hall** (IJAY's Bistro, Mara's Pepper Soup), the **2001 Complex** food court (grill and cold drinks), and **milky popcorn at Love Garden**.
+- **Every vendor has a menu**: Ozu's Suya Spot and Mama Put Provisions, Mama Titi's Buka and the Campus Buka.
+- **Haggling** with any vendor ("Abeg add fat 🙏", "Round it off for me na", "Add jara!"). The server decides the outcome: a discount, extra jara, or a funny refusal. You're never charged more than the menu price.
+- **Hall chants** at King Jaja, Moremi, Mariere, Kofo, Eni Njoku and Fagunwa halls. Your own hall earns hall points, and chanting at a rival's door is just for bragging rights.
+- **Sit in for class** at the faculties: surprise tests with real course codes. Lectures also announce course codes, and an SUG "Aluta continua" congress joins the rotating campus events.
+- **Quick-chat slang chips** for easy mobile chat. These go through normal moderation.
+- **All three Balogun Row shops** sell drip, including Fresh Kicks.
+
+> Vendor names (IJAY's Bistro, Mara's Pepper Soup) refer to real campus businesses. Get their consent before public launch; this could become paid in-game vendor sponsorship.
+
 ## Run locally
 
 ```bash

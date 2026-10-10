@@ -105,7 +105,8 @@ export type ServerMessage =
   | { t: "event"; event: CampusEvent | null; result?: { venue: string; attended: number; you: boolean } }
   | { t: "halls"; halls: HallStanding[] }
   | { t: "arrived"; place: string }
-  | { t: "quiz"; id: string; questions: { q: string; options: string[] }[] }
+  | { t: "quiz"; id: string; title: string; questions: { q: string; options: string[] }[] }
+  | { t: "vendor"; vendor: string; line: string }
   | { t: "quizResult"; correct: number; answers: number[] }
   | { t: "result"; grade: string; line: string }
   | { t: "compliment"; from: string; name: string; line: string }

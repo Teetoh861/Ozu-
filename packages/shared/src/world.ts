@@ -84,6 +84,8 @@ const OZU: MapDef = {
     { id: "buka", name: "Mama Titi's Buka", blurb: "Amala, ewedu and the best gist in the district.", x: -30, z: 16 },
     { id: "market", name: "Balogun Row", blurb: "Fabric, phones, shoes — if it exists, someone here sells it.", x: 30, z: 16 },
     { id: "lounge", name: "Shrine Lounge", blurb: "Afrobeats, highlife and live sets every night.", x: 0, z: 40 },
+    { id: "suya", name: "Suya Spot", blurb: "Fresh suya off the grill. Fat costs extra — or does it?", x: -18, z: 20 },
+    { id: "provisions", name: "Mama Put Provisions", blurb: "Agege bread, ewa agoyin and snacks.", x: -20, z: -29.5 },
     { id: "park", name: "Danfo Park", blurb: "Yellow buses, conductors calling routes. Catch a danfo to Unilag here.", x: -38, z: -34 },
     { id: "lookout", name: "Lagoon Lookout", blurb: "Watch the sun set over the water.", x: 42, z: -46 },
   ],
@@ -131,6 +133,17 @@ const UNILAG: MapDef = {
     { id: "u-sports", name: "Sports Centre", blurb: "Track, pitch and inter-hall competitions.", x: -16, z: -38 },
     { id: "u-garden", name: "Love Garden", blurb: "Shade, benches and long conversations.", x: -16, z: 46 },
     { id: "u-buka", name: "Campus Buka", blurb: "Rice, swallow and cold drinks between lectures.", x: 8, z: 40 },
+    { id: "u-newhall", name: "New Hall", blurb: "Food heaven: IJAY's Bistro, Mara's Pepper Soup and more.", x: 24, z: -37.5 },
+    { id: "u-complex", name: "2001 Complex", blurb: "Food court by New Hall — grills, cold drinks, gist.", x: 8, z: -38 },
+    { id: "u-arts", name: "Faculty of Arts", blurb: "Lectures, debates and drama rehearsals.", x: -8, z: 8 },
+    { id: "u-science", name: "Faculty of Science", blurb: "Labs, practicals and long tests.", x: 8, z: 8 },
+    { id: "u-engineering", name: "Faculty of Engineering", blurb: "Where the hardest assignments live.", x: -8, z: 30 },
+    { id: "u-jaja", name: "King Jaja Hall", blurb: "The largest male hall. Ask them, it's also the best.", x: -32.5, z: 30 },
+    { id: "u-moremi", name: "Moremi Hall", blurb: "Home of queens — self-acclaimed best hall.", x: 22.5, z: 28 },
+    { id: "u-mariere", name: "Mariere Hall", blurb: "Mariere boys, loud and proud.", x: -32.5, z: 6 },
+    { id: "u-kofo", name: "Kofo Ademola Hall", blurb: "Kofo ladies on top.", x: -32.5, z: -16 },
+    { id: "u-eni-njoku", name: "Eni Njoku Hall", blurb: "Eni Njoku for life.", x: 22.5, z: 46 },
+    { id: "u-fagunwa", name: "Fagunwa Hall", blurb: "Fagunwa queens.", x: -32.5, z: 47 },
     { id: "u-auditorium", name: "J.F. Ade Ajayi Auditorium", blurb: "The big stage: Mr & Miss UNILAG, convocations, concerts.", x: 26, z: 14 },
     { id: "u-radio", name: "Radio 103.1 FM Studio", blurb: "Nigeria's first campus radio station. Request a jam!", x: -24, z: -24 },
   ],
@@ -151,6 +164,8 @@ const UNILAG: MapDef = {
     { id: "u-eni-njoku", kind: "hall", x: 30, z: 46, w: 10, d: 12, h: 13, color: "#d6dcc0", sign: "ENI NJOKU HALL", signColor: "#8a5a00", facing: -Q },
     { id: "u-fagunwa", kind: "hall", x: -40, z: 47, w: 10, d: 12, h: 13, color: "#f2dcc0", sign: "FAGUNWA HALL", signColor: "#b5452f", facing: Q },
     { id: "u-auditorium", kind: "venue", x: 34, z: 12, w: 10, d: 14, h: 10, color: "#e9e3d6", sign: "J.F. ADE AJAYI AUDITORIUM", signColor: "#7a1f3d", facing: -Q },
+    { id: "u-newhall", kind: "hall", x: 24, z: -46, w: 14, d: 10, h: 13, color: "#e6d8c4", sign: "NEW HALL", signColor: "#0e8a5f", facing: 0 },
+    { id: "u-complex", kind: "food", x: 8, z: -44, w: 10, d: 8, h: 5, color: "#f2d39b", sign: "2001 COMPLEX", signColor: "#c0262d", facing: 0 },
     { id: "u-radio", kind: "faculty", x: -24, z: -18, w: 6, d: 6, h: 6, color: "#cfd5de", sign: "RADIO 103.1 FM", signColor: "#c0262d", facing: Math.PI },
     { id: "u-buka", kind: "food", x: 15, z: 42, w: 7, d: 8, h: 4, color: "#e8c98f", sign: "CAMPUS BUKA", signColor: "#0e8a5f", facing: -Q },
     { id: "u-shuttle", kind: "transport", x: -12, z: 54, w: 12, d: 4, h: 4, color: "#2a3d8f", sign: "SHUTTLE & DANFO", signColor: "#f6c700", facing: Math.PI },
@@ -213,11 +228,13 @@ export const LECTURE_VENUES = [
 /** Big campus moments that rotate in between lectures. */
 export const SHOW_EVENTS = [
   { id: "mr-miss", name: "J.F. Ade Ajayi Auditorium", title: "Mr & Miss UNILAG is starting at the Auditorium! 👑", x: 26, z: 14 },
+  { id: "sug", name: "Senate forecourt", title: "SUG congress at the Senate forecourt — Aluta continua! ✊", x: -4, z: -12 },
   { id: "hall-week", name: "Jaja Hall", title: "Hall Week jam at Jaja Hall — everybody come! 🎉", x: -31, z: 30 },
   { id: "jambite", name: "Love Garden", title: "Jambite welcome hangout at Love Garden 🐣", x: -16, z: 44 },
   { id: "sports", name: "Sports Centre", title: "Inter-hall match at the Sports Centre ⚽", x: -16, z: -38 },
 ];
 export const LECTURE_RADIUS = 7;
+export const COURSE_CODES = ["GST 101", "GST 102", "CSC 201", "MAT 101", "ECO 101", "MCB 205", "LAW 101", "ACC 201", "PHY 101", "CHM 101", "MAC 101", "ENG 201"];
 export const LECTURE_SECONDS = 75;
 export const LECTURE_INTERVAL_SECONDS = 240;
 

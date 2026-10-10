@@ -34,7 +34,7 @@ export function onBuildingTap(b: Building) {
     if (!isTap(e)) return;
     e.stopPropagation();
     const g = useGame.getState();
-    const place = PLACES.find((p) => p.buildingId === b.id && p.map === g.map);
+    const place = PLACES.find((p) => p.buildingIds?.includes(b.id) && p.map === g.map);
     if (place) {
       const loc = getMap(g.map).locations.find((l) => l.id === place.id);
       if (loc) return navigateTo(loc.x, loc.z, place.id);

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { CHALLENGE_GOAL, MAPS, LECTURE_VENUES, QUIZ_BANK, containsProfanity, validateDisplayName, cleanChat, collides, type ServerMessage } from "@ozu/shared";
+import { CHALLENGE_GOAL, MAPS, LECTURE_VENUES, QUIZ_BANK, placeFor, containsProfanity, validateDisplayName, cleanChat, collides, type ServerMessage } from "@ozu/shared";
 const LOCATIONS = MAPS.ozu.locations;
 const BUILDINGS = MAPS.ozu.buildings;
 import { District, Session, type Conn } from "../src/game";
@@ -248,16 +248,16 @@ describe("places & activities", () => {
 
   it("fast-travels within the campus", () => {
     const { s, c } = at("u-gate");
-    campus.goto(s, { id: "u-library", map: "unilag", emoji: "", actions: ["quiz"] });
+    campus.goto(s, placeFor("u-library")!);
     expect(Math.hypot(s.x - 5, s.z + 14)).toBeLessThan(4);
     expect(c.sent.some((m) => m.t === "arrived")).toBe(true);
   });
 
   it("sells food only when you can afford it", async () => {
     const { s } = at("u-buka", 20);
-    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { item: "jollof" } });
+    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { vendor: "campus-buka", item: "jollof" } });
     expect(s.record.progress.coins).toBe(5);
-    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { item: "jollof" } });
+    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { vendor: "campus-buka", item: "jollof" } });
     expect(s.record.progress.coins).toBe(5);
   });
 
@@ -273,11 +273,9 @@ describe("places & activities", () => {
 
   it("refuses activities far from the place", async () => {
     const { s } = at("u-gate", 50);
-    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { item: "suya" } });
-    // u-gate is ~8m from the buka: allowed. Move far away and retry.
     s.x = -40; s.z = -40;
     const before = s.record.progress.coins;
-    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { item: "suya" } });
+    await campus.handle(s, { t: "act", action: "food", place: "u-buka", data: { vendor: "campus-buka", item: "indomie" } });
     expect(s.record.progress.coins).toBe(before);
   });
 
@@ -300,5 +298,51 @@ describe("shop", () => {
     expect(a.s.record.progress.unlocked).toContain("headphones");
     expect(a.s.record.progress.equipped).toBe("headphones");
     expect(a.s.record.progress.unlocked).not.toContain("bucket-hat");
+  });
+});
+
+describe("vendors & chants", () => {
+  let campus: District;
+  beforeEach(() => {
+    campus = new District("u3", "unilag", store, { guestChat: true, max: 10 });
+  });
+  function at(placeId: string, coins = 0, hall: string | null = null) {
+    const c = fakeConn();
+    const s = new Session(c, record("v" + Math.random()), "guest");
+    s.record.progress.coins = coins;
+    s.record.hall = hall;
+    campus.join(s, null);
+    const loc = MAPS.unilag.locations.find((l) => l.id === placeId)!;
+    s.x = loc.x; s.z = loc.z;
+    return { s, c };
+  }
+
+  it("haggling never charges more than the menu price and always gets a vendor reply", async () => {
+    for (let i = 0; i < 20; i++) {
+      const { s, c } = at("u-newhall", 100);
+      await campus.handle(s, { t: "act", action: "food", place: "u-newhall", data: { vendor: "ijay", item: "shawarma", haggle: "fat" } });
+      expect(c.sent.some((m) => m.t === "vendor")).toBe(true);
+      expect(100 - s.record.progress.coins).toBeLessThanOrEqual(16);
+      expect(100 - s.record.progress.coins).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects items from another vendor's menu", async () => {
+    const { s } = at("u-garden", 100);
+    await campus.handle(s, { t: "act", action: "food", place: "u-garden", data: { vendor: "ijay", item: "shawarma" } });
+    expect(s.record.progress.coins).toBe(100);
+    await campus.handle(s, { t: "act", action: "food", place: "u-garden", data: { vendor: "popcorn", item: "milky-big" } });
+    expect(s.record.progress.coins).toBe(94);
+  });
+
+  it("hall chant broadcasts and rewards only your own hall", async () => {
+    const mine = at("u-jaja", 0, "jaja");
+    await campus.handle(mine.s, { t: "act", action: "chant", place: "u-jaja" });
+    expect(mine.c.sent.some((m) => m.t === "chat" && m.text.includes("JAJA"))).toBe(true);
+    expect(mine.s.record.progress.hallPoints).toBe(3);
+    const rival = at("u-jaja", 0, "moremi");
+    await campus.handle(rival.s, { t: "act", action: "chant", place: "u-jaja" });
+    expect(rival.c.sent.some((m) => m.t === "chat" && m.text.includes("MOREMI"))).toBe(true);
+    expect(rival.s.record.progress.hallPoints).toBe(0);
   });
 });

@@ -57,6 +57,7 @@ export const COSMETICS: Cosmetic[] = [
   { id: "gold-chain", name: "Owambe Gold Chain", description: "For when the party is serious.", repRequired: 100, price: 0 },
   { id: "headphones", name: "Akoka Headphones", description: "Afrobeats on repeat, world on mute.", repRequired: 0, price: 40 },
   { id: "bucket-hat", name: "Bucket Hat", description: "Lagoon Front approved.", repRequired: 0, price: 60 },
+  { id: "fresh-kicks", name: "Fresh Kicks", description: "Clean white sneakers from Lekki Kicks.", repRequired: 0, price: 50 },
   { id: "eagles-scarf", name: "Super Eagles Scarf", description: "Green-white-green, match day ready.", repRequired: 0, price: 80 },
 ];
 

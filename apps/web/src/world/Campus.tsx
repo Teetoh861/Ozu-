@@ -22,6 +22,8 @@ export function CampusScene({ quality }: { quality: "high" | "low" }) {
       <LoveGarden />
       <CampusLamps />
       <DanfoBus position={[-12, 0, 49.5]} rotation={0} />
+      <PopcornCart position={[-12.6, 0, 44.6]} />
+      <FoodCourt />
       {/* Umbrellas outside the campus buka */}
       {[[10.5, 38, "#0e8a5f"], [10.5, 46, "#c0262d"]].map(([x, z, c], i) => (
         <group key={i} position={[x as number, 0, z as number]}>
@@ -231,6 +233,49 @@ function CampusLamps() {
         <group key={i} position={[x, 0, z]}>
           <mesh geometry={cyl} material={M.metal} position={[0, 2.6, 0]} scale={[0.07, 5.2, 0.07]} castShadow />
           <mesh geometry={box} material={M.lamp} position={[x < 0 ? 0.5 : -0.5, 5.05, 0]} scale={[0.6, 0.12, 0.35]} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+const stripeRed = new THREE.MeshStandardMaterial({ color: "#d62828", roughness: 0.6 });
+const glass = new THREE.MeshStandardMaterial({ color: "#fff3c4", roughness: 0.1, transparent: true, opacity: 0.55, emissive: "#ffd166", emissiveIntensity: 0.25 });
+
+/** Love Garden's famous milky popcorn cart. */
+function PopcornCart({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      <mesh geometry={box} material={stripeRed} position={[0, 0.75, 0]} scale={[1.1, 0.7, 0.7]} castShadow />
+      <mesh geometry={box} material={glass} position={[0, 1.45, 0]} scale={[0.9, 0.7, 0.55]} />
+      {Array.from({ length: 10 }).map((_, i) => (
+        <mesh key={i} position={[-0.3 + (i % 5) * 0.15, 1.2 + Math.floor(i / 5) * 0.12, 0.05]}>
+          <sphereGeometry args={[0.06, 6, 5]} />
+          <meshStandardMaterial color="#fff8e1" roughness={0.9} />
+        </mesh>
+      ))}
+      <mesh geometry={box} material={stripeRed} position={[0, 1.88, 0]} scale={[1.2, 0.08, 0.8]} castShadow />
+      {[-0.45, 0.45].map((x) => <mesh key={x} geometry={cyl} material={M.tyre} position={[x, 0.25, 0.38]} rotation-x={Math.PI / 2} scale={[0.22, 0.06, 0.22]} />)}
+    </group>
+  );
+}
+
+/** Tables and umbrellas outside New Hall and the 2001 Complex. */
+function FoodCourt() {
+  const spots: [number, number, string][] = [[14, -36, "#c0262d"], [18, -34.5, "#0e8a5f"], [30, -35, "#f6c700"], [34, -36.5, "#2a3d8f"], [4, -36, "#ff7a1a"]];
+  return (
+    <group>
+      {spots.map(([x, z, c], i) => (
+        <group key={i} position={[x, 0, z]}>
+          <mesh geometry={cyl} material={M.metal} position={[0, 1.2, 0]} scale={[0.04, 2.4, 0.04]} />
+          <mesh position={[0, 2.4, 0]} castShadow>
+            <coneGeometry args={[1.4, 0.45, 8, 1, true]} />
+            <meshStandardMaterial color={c} side={THREE.DoubleSide} roughness={0.8} />
+          </mesh>
+          <mesh geometry={cyl} material={M.white} position={[0, 0.72, 0]} scale={[0.6, 0.05, 0.6]} castShadow />
+          {[0, 1, 2, 3].map((k) => (
+            <mesh key={k} geometry={box} material={M.white} position={[Math.cos(k * 1.57) * 0.95, 0.42, Math.sin(k * 1.57) * 0.95]} scale={[0.35, 0.06, 0.35]} />
+          ))}
         </group>
       ))}
     </group>

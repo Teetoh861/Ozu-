@@ -276,7 +276,7 @@ class GameClient {
         return;
       case "quiz": {
         const a = g.activity;
-        g.set({ activity: { kind: "quiz", place: a && "place" in a ? a.place : "", id: m.id, questions: m.questions } });
+        g.set({ activity: { kind: "quiz", place: a && "place" in a ? a.place : "", id: m.id, title: m.title, questions: m.questions } });
         return;
       }
       case "quizResult": {
@@ -286,6 +286,9 @@ class GameClient {
       }
       case "result":
         g.set({ activity: { kind: "result", grade: m.grade, line: m.line } });
+        return;
+      case "vendor":
+        g.toast(`🗣️ ${m.vendor}: "${m.line}"`, "info");
         return;
       case "compliment":
         if (!g.blocked.includes(m.from)) g.toast(`💌 ${m.name}: "${m.line}"`, "reward");

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ACTIONS, CHILL_SECONDS, COSMETICS, FOODS, MAPS, PLACES, SHOT_LINES, getMap, placeFor, type ActionId, type MapId,
+  ACTIONS, CATEGORY_LABELS, CHILL_SECONDS, COSMETICS, HAGGLE_LINES, MAPS, PLACES, SHOT_LINES, VENDORS, getMap, hallName,
+  placeFor, type ActionId, type MapId, type MenuItem, type PlaceCategory, type Vendor,
 } from "@ozu/shared";
 import { useGame } from "../state/store";
 import { client } from "../net/client";
@@ -24,8 +25,11 @@ export function PlacesSheet() {
       {order.map((m) => (
         <section key={m} className="places-section">
           <h3>{m === map ? `Here in ${MAPS[m].short}` : `Over in ${MAPS[m].short}`}</h3>
+          {(Object.keys(CATEGORY_LABELS) as PlaceCategory[]).filter((c) => PLACES.some((p) => p.map === m && p.category === c)).map((c) => (
+          <div key={c}>
+          <h4 className="cat">{CATEGORY_LABELS[c]}</h4>
           <ul className="places">
-            {PLACES.filter((p) => p.map === m).map((p) => {
+            {PLACES.filter((p) => p.map === m && p.category === c).map((p) => {
               const loc = locationOf(p.id)!;
               return (
                 <li key={p.id}>
@@ -46,6 +50,8 @@ export function PlacesSheet() {
               );
             })}
           </ul>
+          </div>
+          ))}
         </section>
       ))}
       <p className="muted small">Tip: tap anywhere on the ground to walk there, or tap a building to see what you can do inside.</p>
@@ -70,8 +76,13 @@ export function PlaceCard() {
       case "shot":
         return set({ activity: { kind: a, place: place.id } });
       case "quiz":
+      case "class":
         set({ activity: { kind: "quiz", place: place.id, id: "", questions: [] } });
-        if (!client.act("quiz", place.id)) set({ activity: null });
+        if (!client.act(a, place.id)) set({ activity: null });
+        return;
+      case "chant":
+        playEmote("dance");
+        client.act("chant", place.id);
         return;
       case "result":
         client.act("result", place.id);
@@ -108,7 +119,7 @@ export function PlaceCard() {
           <button key={a} className="action" onClick={() => start(a)}>
             <span className="ae">{a === "travel" ? "🚌" : ACTIONS[a].emoji}</span>
             <span>
-              <strong>{a === "travel" ? (place.map === "ozu" ? "Danfo to Unilag" : "Danfo to Ozu") : ACTIONS[a].label}</strong>
+              <strong>{a === "travel" ? (place.map === "ozu" ? "Danfo to Unilag" : "Danfo to Ozu") : a === "chant" ? `Hall chant — ${hallName(place.hall)}` : a === "food" && VENDORS[place.id] ? `Buy food — ${VENDORS[place.id].map((v) => v.name).join(", ")}` : ACTIONS[a].label}</strong>
               <small>{ACTIONS[a].hint}</small>
             </span>
           </button>
@@ -155,21 +166,47 @@ function Coins() {
 
 function FoodMenu({ place, onClose }: { place: string; onClose: () => void }) {
   const coins = useGame((s) => s.progress?.coins ?? 0);
+  const [haggle, setHaggle] = useState<{ vendor: Vendor; item: MenuItem } | null>(null);
+  const vendors = VENDORS[place] ?? [];
+  const buy = (vendor: Vendor, item: MenuItem, line?: string) => {
+    client.act("food", place, { vendor: vendor.id, item: item.id, ...(line ? { haggle: line } : {}) });
+    onClose();
+  };
+  if (haggle)
+    return (
+      <Modal title={`Haggle with ${haggle.vendor.name} 🗣️`} onClose={onClose}>
+        <p>You want <strong>{haggle.item.emoji} {haggle.item.name}</strong> (● {haggle.item.price}). What will you say?</p>
+        <div className="quiz-options">
+          {HAGGLE_LINES.map((h) => (
+            <button key={h.id} className="btn" onClick={() => buy(haggle.vendor, haggle.item, h.id)}>"{h.text}"</button>
+          ))}
+        </div>
+        <p className="muted small">You might get a discount, extra jara… or a cheeky "no". Either way, you're buying.</p>
+        <button className="btn ghost" onClick={() => setHaggle(null)}>Back to menu</button>
+      </Modal>
+    );
   return (
     <Modal title="What are you eating today? 🍛" onClose={onClose}>
       <Coins />
-      <ul className="menu">
-        {FOODS.map((f) => (
-          <li key={f.id}>
-            <span className="pe">{f.emoji}</span>
-            <strong>{f.name}</strong>
-            <button className="btn small primary" disabled={coins < f.price} onClick={() => { client.act("food", place, { item: f.id }); onClose(); }}>
-              ● {f.price}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p className="muted small">Earn coins from quizzes, lectures, clean-ups and meeting people.</p>
+      {vendors.map((v) => (
+        <section key={v.id} className="vendor">
+          <h3>{v.name}</h3>
+          <p className="muted small vendor-say">"{v.greeting}"</p>
+          <ul className="menu">
+            {v.items.map((f) => (
+              <li key={f.id}>
+                <span className="pe">{f.emoji}</span>
+                <strong>{f.name}</strong>
+                <span className="row gap">
+                  <button className="btn small ghost" disabled={coins < 1} onClick={() => setHaggle({ vendor: v, item: f })} title="Haggle">🗣️</button>
+                  <button className="btn small primary" disabled={coins < f.price} onClick={() => buy(v, f)}>● {f.price}</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      <p className="muted small">Tap 🗣️ to haggle. Earn coins from quizzes, classes, lectures, clean-ups and meeting people.</p>
     </Modal>
   );
 }
@@ -207,7 +244,7 @@ function Quiz({ onClose }: { onClose: () => void }) {
   if (activity?.kind !== "quiz") return null;
   if (!activity.questions.length)
     return (
-      <Modal title="Library quiz 🧠" onClose={onClose}>
+      <Modal title="Getting your questions… 🧠" onClose={onClose}>
         <div className="spinner" />
       </Modal>
     );
@@ -220,7 +257,7 @@ function Quiz({ onClose }: { onClose: () => void }) {
     if (next.length === activity.questions.length) client.act("quiz", activity.place, { id: activity.id, answers: next });
   };
   return (
-    <Modal title="Library quiz 🧠" onClose={onClose}>
+    <Modal title={activity.title ?? "Quiz 🧠"} onClose={onClose}>
       {!done ? (
         picked.length < activity.questions.length ? (
           <>

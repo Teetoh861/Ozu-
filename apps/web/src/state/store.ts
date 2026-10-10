@@ -13,7 +13,7 @@ export type Panel = null | "activities" | "profile" | "settings" | "help" | "gui
 export type Activity =
   | { kind: "food"; place: string }
   | { kind: "shop"; place: string }
-  | { kind: "quiz"; place: string; id: string; questions: { q: string; options: string[] }[]; result?: { correct: number; answers: number[] } }
+  | { kind: "quiz"; place: string; id: string; title?: string; questions: { q: string; options: string[] }[]; result?: { correct: number; answers: number[] } }
   | { kind: "result"; grade: string; line: string }
   | { kind: "chill"; place: string; until: number }
   | { kind: "penalty"; place: string }
@@ -196,7 +196,10 @@ export const useGame = create<State>((set, get) => ({
     setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), level === "reward" ? 3200 : 4500);
   },
   addChat: (line) => set({ chat: [...get().chat.slice(-79), { ...line, id: seq++ }] }),
-  reward: (r) => get().toast(`+${r.coins} coins · +${r.rep} rep — ${r.reason}`, "reward"),
+  reward: (r) => {
+    const parts = [r.coins < 0 ? `−${-r.coins} coins` : r.coins > 0 ? `+${r.coins} coins` : "", r.rep ? `+${r.rep} rep` : ""].filter(Boolean);
+    get().toast(`${parts.join(" · ")}${parts.length ? " — " : ""}${r.reason}`, r.coins < 0 ? "info" : "reward");
+  },
 }));
 
 export const persist = LS;

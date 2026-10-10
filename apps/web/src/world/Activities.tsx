@@ -102,10 +102,15 @@ export const CAMPUS_NPCS: StaticNpc[] = [
   { name: "Mama Nkechi", pos: [11.0, 42], ry: -Math.PI / 2, anim: "idle", avatar: { body: "fem", hair: "gele", outfit: "ankara", palette: 3, skin: 1 } },
   { name: "Porter Baba", pos: [-33.5, 30], ry: Math.PI / 2, anim: "idle", avatar: { body: "masc", hair: "bald", outfit: "kaftan", palette: 4, skin: 0 } },
   { name: "Course Rep Tolu", pos: [-4, -10], ry: Math.PI, anim: "wave", avatar: { body: "fem", hair: "braids", outfit: "office", palette: 1, skin: 3 } },
+  { name: "Popcorn Aunty", pos: [-11.6, 44.6], ry: -Math.PI / 2, anim: "idle", avatar: { body: "fem", hair: "gele", outfit: "ankara", palette: 2, skin: 2 } },
+  { name: "IJAY", pos: [21, -40.4], ry: 0, anim: "wave", avatar: { body: "masc", hair: "lowcut", outfit: "streetwear", palette: 0, skin: 1 } },
+  { name: "Mama Mara", pos: [27, -40.4], ry: 0, anim: "idle", avatar: { body: "fem", hair: "gele", outfit: "kaftan", palette: 1, skin: 0 } },
   { name: "Conductor Ifeanyi", pos: [-15, 48], ry: 0.3, anim: "wave", avatar: { body: "masc", hair: "lowcut", outfit: "streetwear", palette: 2, skin: 2 } },
 ];
 
 export const OZU_NPCS: StaticNpc[] = [
+  { name: "Mallam (Suya)", pos: [-18, 21.6], ry: Math.PI, anim: "idle", avatar: { body: "masc", hair: "bald", outfit: "kaftan", palette: 4, skin: 1 } },
+  { name: "Iya Bisi", pos: [-20, -31.6], ry: 0, anim: "idle", avatar: { body: "fem", hair: "gele", outfit: "ankara", palette: 0, skin: 3 } },
   { name: "Mama Titi", pos: [-30, 21.4], ry: Math.PI, anim: "idle", avatar: { body: "fem", hair: "gele", outfit: "ankara", palette: 1, skin: 1 } },
   { name: "Conductor Sule", pos: [-40, -32], ry: 0.4, anim: "wave", avatar: { body: "masc", hair: "lowcut", outfit: "streetwear", palette: 3, skin: 0 } },
   { name: "DJ Kemi", pos: [0, 43], ry: Math.PI, anim: "dance", avatar: { body: "fem", hair: "braids", outfit: "streetwear", palette: 4, skin: 3 } },

@@ -90,7 +90,8 @@ function LocationLabels() {
 }
 
 function LocationLabel({ id, x, y, z, done, name }: { id: string; x: number; y: number; z: number; done: boolean; name: string }) {
-  const ref = useLabel(id, () => ({ x, y, z }), 45);
+  // Undiscovered places beckon from further away; visited ones only label up close.
+  const ref = useLabel(id, () => ({ x, y, z }), done ? 12 : 28);
   return (
     <div ref={ref} className="wl">
       <div className={`loc-label ${done ? "done" : ""}`}>{done ? "✓ " : "◆ "}{name}</div>

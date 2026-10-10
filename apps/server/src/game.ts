@@ -3,7 +3,7 @@ import {
   CHALLENGE_GOAL, CHALLENGE_MAX_ITEMS, COSMETICS, DAILY_GREET_REWARD_CAP, DISCOVER_RANGE, EMOTES,
   INTERACT_RANGE, LECTURE_RADIUS, LECTURE_SECONDS, LECTURE_VENUES, SHOW_EVENTS, PICKUP_RANGE, REPORT_REASONS, REWARDS,
   RUN_SPEED, SPEED_TOLERANCE, cleanChat, collides, clampToWorld, getMap, resolveMove,
-  CHILL_SECONDS, FOODS, PLACE_RANGE, QUIZ_BANK, QUIZ_COINS_PER_CORRECT, QUIZ_LENGTH, RESULTS, SHOT_LINES, placeFor,
+  CHILL_SECONDS, COURSE_CODES, HAGGLE_LINES, HALL_CHANTS, findMenuItem, PLACE_RANGE, QUIZ_BANK, QUIZ_COINS_PER_CORRECT, QUIZ_LENGTH, RESULTS, SHOT_LINES, placeFor,
   type Place,
   type Anim, type CampusEvent, type ChallengeItem, type ClientMessage, type Emote, type HallStanding, type MapDef,
   type MapId, type PublicPlayer, type Reward, type ServerMessage,
@@ -226,7 +226,8 @@ export class District {
     const event: CampusEvent = show
       ? { id: randomUUID().slice(0, 8), kind: "show", title: show.title, venue: show.name, x: show.x, z: show.z, secondsLeft: LECTURE_SECONDS }
       : {
-          id: randomUUID().slice(0, 8), kind: "lecture", title: `Lecture starting at the ${venue.name}!`,
+          id: randomUUID().slice(0, 8), kind: "lecture",
+          title: `${COURSE_CODES[Math.floor(Math.random() * COURSE_CODES.length)]} lecture starting at the ${venue.name}!`,
           venue: venue.name, x: venue.x, z: venue.z, secondsLeft: LECTURE_SECONDS,
         };
     this.lecture = { event, endsAt: Date.now() + LECTURE_SECONDS * 1000 };
@@ -454,19 +455,53 @@ export class District {
     const p = s.record.progress;
     switch (msg.action) {
       case "food": {
-        const food = FOODS.find((f) => f.id === data.item);
-        if (!food) return;
-        if (p.coins < food.price) return this.notice(s, `You need ${food.price} coins for ${food.name}.`, "info");
-        p.coins -= food.price;
-        const rep = (s.cooldowns.get("food-rep") ?? 0) < Date.now() ? 1 : 0;
+        const found = findMenuItem(place.id, data.vendor, data.item);
+        if (!found) return;
+        const { vendor, item } = found;
+        let price = item.price;
+        let rep = (s.cooldowns.get("food-rep") ?? 0) < Date.now() ? 1 : 0;
+        let reason = `${item.emoji} ${item.name} from ${vendor.name} — enjoy!`;
+        if (HAGGLE_LINES.some((h) => h.id === data.haggle)) {
+          // Haggling: a deal, extra jara, or a cheeky refusal.
+          const roll = Math.random();
+          let line: string;
+          if (roll < 0.4) {
+            price = Math.max(1, Math.round(item.price * (0.6 + Math.random() * 0.2)));
+            line = vendor.replies.deal;
+            reason = `${item.emoji} ${item.name} — haggled down from ${item.price}! 🤝`;
+          } else if (roll < 0.7) {
+            line = vendor.replies.jara;
+            rep += 1;
+            reason = `${item.emoji} ${item.name} with extra jara! 😄`;
+          } else {
+            line = vendor.replies.no;
+          }
+          s.conn.send({ t: "vendor", vendor: vendor.name, line });
+        }
+        if (p.coins < price) return this.notice(s, `You need ${price} coins for ${item.name}.`, "info");
+        p.coins -= price;
         if (rep) s.cooldowns.set("food-rep", Date.now() + 120_000);
         p.rep += rep;
-        s.conn.send({ t: "progress", progress: p, reward: { coins: -food.price, rep, reason: `${food.emoji} ${food.name} — enjoy!` } });
+        if (this.map.id === "unilag" && s.record.hall) p.hallPoints += rep;
+        s.conn.send({ t: "progress", progress: p, reward: { coins: -price, rep, reason } });
         s.anim = "clap";
         this.moved = true;
         await this.persist(s);
         return;
       }
+      case "chant": {
+        if (!place.hall) return;
+        if (!this.cooldown(s, "chant", 45_000)) return;
+        const own = s.record.hall === place.hall;
+        const text = HALL_CHANTS[own ? place.hall : s.record.hall ?? place.hall] ?? HALL_CHANTS[place.hall];
+        s.anim = "dance";
+        this.moved = true;
+        this.broadcast({ t: "chat", from: s.id, name: s.record.name, text, ts: Date.now() }, undefined, (r) => !this.blockedBetween(r, s));
+        this.broadcast({ t: "emote", id: s.id, emote: "dance" }, undefined, (r) => !this.blockedBetween(r, s));
+        if (own) return this.grant(s, { coins: 1, rep: 3 }, "Hall chant — your hall heard you! 📣");
+        return this.notice(s, s.record.hall ? "You chanted your hall's name at a rival's door. Bold! 😂" : "Pick a hall in Edit character to earn points for chanting.", "info");
+      }
+      case "class":
       case "quiz": {
         if (Array.isArray(data.answers)) {
           const q = s.quiz;
@@ -478,10 +513,13 @@ export class District {
           if (correct > 0) await this.grant(s, { coins: correct * QUIZ_COINS_PER_CORRECT, rep: correct }, `Quiz: ${correct}/${QUIZ_LENGTH} correct`);
           return;
         }
-        if (!this.cooldown(s, "quiz", 90_000)) return;
+        if (!this.cooldown(s, msg.action, 90_000)) return;
         const pool = [...QUIZ_BANK.keys()].sort(() => Math.random() - 0.5).slice(0, QUIZ_LENGTH);
         s.quiz = { id: randomUUID().slice(0, 8), questions: pool };
-        s.conn.send({ t: "quiz", id: s.quiz.id, questions: pool.map((i) => ({ q: QUIZ_BANK[i].q, options: QUIZ_BANK[i].options })) });
+        const title = msg.action === "class"
+          ? `Surprise test: ${COURSE_CODES[Math.floor(Math.random() * COURSE_CODES.length)]} 📝`
+          : "Library quiz 🧠";
+        s.conn.send({ t: "quiz", id: s.quiz.id, title, questions: pool.map((i) => ({ q: QUIZ_BANK[i].q, options: QUIZ_BANK[i].options })) });
         return;
       }
       case "result": {

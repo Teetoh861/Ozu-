@@ -96,8 +96,11 @@ const scarfWhite = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness:
 
 const backpackMats = ["#1b1240", "#c0262d", "#2a3d8f", "#0e8a5f", "#333333"].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 }));
 
+const freshKicks = new THREE.MeshStandardMaterial({ color: "#fafafa", roughness: 0.4, emissive: "#ff7a1a", emissiveIntensity: 0.08 });
+
 export function Character({ avatar, equipped, motion, castShadow = true, backpack = false }: Props) {
-  const m = useMaterials(avatar);
+  const base = useMaterials(avatar);
+  const m = equipped === "fresh-kicks" ? { ...base, shoes: freshKicks } : base;
   const fem = avatar.body === "fem";
   const shoulderW = fem ? 0.19 : 0.215;
   const hipW = fem ? 0.115 : 0.1;
