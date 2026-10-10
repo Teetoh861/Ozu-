@@ -16,7 +16,7 @@ A virtual Lagos where people meet, explore, express themselves and experience Ni
 | "Moderated chat" undefined | Three layers: (1) an automatic filter covering English plus Pidgin, Yoruba and Igbo insults, with leetspeak and letter-spacing normalisation; (2) rate limits with auto-mute; (3) player reports carrying the last 10 messages as evidence, reviewed through the admin API. Proposed review service levels are in the Runbook. |
 | Auth ↔ game server integration | The server verifies Supabase JWTs (JWKS, or an HS256 secret) on handshake. Identity can never be asserted by the client. |
 | Capacity | 40 players per district shard; extra shards open automatically. |
-| Age | 18+ self-attestation gate and guidelines acceptance before entry. |
+| Age | **v0.2: 16+.** Self-declared age group on entry (16–17 or 18+); under-16s are refused. Under-18 safeguards: reports involving them are high priority. For everyone: phone numbers, links and @handles are masked in chat. Future features with direct messages, nightlife, or money spraying must exclude under-18s. *Open item:* age self-attestation is not verification. Review this with legal counsel before marketing to schools. |
 | Data protection (NDPA 2023) | Data is minimised: display name, avatar, progress, block list and reports. No location data, and no email stored by the game server. Chat evidence is kept only with reports. *Open item:* privacy notice, retention schedule and a data-subject request process. |
 | NPCs | Ambient pedestrians and 4 named locals are client-side decoration, and are clearly not players (green name tags). |
 | Real-money | None. Coins have no monetary value; this is stated in the UI and the guidelines. |
@@ -61,3 +61,12 @@ District with 6 named locations · character creation (body, skin, hair, outfit,
 2. **Moderation staffing.** Tooling exists, but someone must own the queue before the public test.
 3. **Scale.** A single server instance is enough for the controlled test. Multi-instance scaling needs Postgres and a shared bus.
 4. **Next features (by value):** friends list → events calendar at Shrine Lounge → food discovery at the buka → dance challenge → second neighbourhood.
+
+## 7. v0.2 — Unilag campus (delivered)
+- Second district: an original, recognisable take on the Akoka campus, reached by danfo. No official crests or logos are used.
+- Hall affiliation and a live hall leaderboard, with campus earnings counting as hall points.
+- Lecture rush: a recurring, server-run campus event that rewards players who reach the venue in time.
+- Verified-student badge for Unilag email sign-ins. This activates when Supabase accounts are configured.
+- 16+ age policy with under-18 safeguards.
+
+**Next candidates:** Whot & Ludo tables (hall common rooms, buka); owambe and nightlife events (18+ only); hustle jobs; inter-hall sports day at the Sports Centre; departmental quiz battles.

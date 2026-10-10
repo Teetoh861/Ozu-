@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
-import type { Avatar, Progress, ReportReason } from "@ozu/shared";
+import { HALLS, type Avatar, type Progress, type ReportReason } from "@ozu/shared";
 
 export interface PlayerRecord {
   id: string;
@@ -13,6 +13,13 @@ export interface PlayerRecord {
   greetDay: { day: string; count: number };
   blocked: string[];
   banned: { reason: string; at: number } | null;
+  /** Self-declared 16–17 year old: stricter safeguards apply. */
+  minor: boolean;
+  /** Unilag hall affiliation and when it last changed. */
+  hall: string | null;
+  hallChangedAt: number;
+  /** Signed in with a Unilag email address. */
+  student: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -26,6 +33,8 @@ export interface ReportRecord {
   details: string;
   evidence: { text: string; ts: number }[];
   status: "open" | "actioned" | "dismissed";
+  /** High when an under-18 player is involved. */
+  priority: "high" | "normal";
   resolution?: string;
   createdAt: number;
 }
@@ -38,11 +47,31 @@ export interface Store {
   addReport(r: ReportRecord): Promise<void>;
   listReports(status?: ReportRecord["status"]): Promise<ReportRecord[]>;
   updateReport(id: string, status: ReportRecord["status"], resolution: string): Promise<boolean>;
+  /** Total hall points per hall across all players. */
+  hallTotals(): Promise<Record<string, number>>;
   close(): Promise<void>;
 }
 
 export function emptyProgress(): Progress {
-  return { coins: 0, rep: 0, discovered: [], greetings: 0, cleanups: 0, challengesCompleted: 0, unlocked: [], equipped: null };
+  return { coins: 0, rep: 0, discovered: [], greetings: 0, cleanups: 0, challengesCompleted: 0, unlocked: [], equipped: null, hallPoints: 0, lecturesAttended: 0 };
+}
+
+/** Fill fields added after a record was first saved. */
+export function normalizeRecord(p: PlayerRecord | null): PlayerRecord | null {
+  if (!p) return null;
+  return {
+    ...p,
+    progress: { ...emptyProgress(), ...p.progress },
+    blocked: p.blocked ?? [],
+    minor: p.minor ?? false,
+    hall: p.hall ?? null,
+    hallChangedAt: p.hallChangedAt ?? 0,
+    student: p.student ?? false,
+  };
+}
+
+function emptyHallTotals(): Record<string, number> {
+  return Object.fromEntries(HALLS.map((h) => [h.id, 0]));
 }
 
 /** JSON-file store for local development and single-instance hosting with a persistent disk. */
@@ -85,7 +114,12 @@ export class FileStore implements Store {
 
   async getPlayer(id: string) {
     const p = this.players.get(id);
-    return p ? structuredClone(p) : null;
+    return p ? normalizeRecord(structuredClone(p)) : null;
+  }
+  async hallTotals() {
+    const t = emptyHallTotals();
+    for (const p of this.players.values()) if (p.hall && p.hall in t) t[p.hall] += p.progress.hallPoints ?? 0;
+    return t;
   }
   async savePlayer(p: PlayerRecord) {
     this.players.set(p.id, structuredClone(p));
@@ -100,7 +134,11 @@ export class FileStore implements Store {
     this.dirty = true;
   }
   async listReports(status?: ReportRecord["status"]) {
-    return this.reports.filter((r) => !status || r.status === status).slice(-500).reverse();
+    return this.reports
+      .filter((r) => !status || r.status === status)
+      .slice(-500)
+      .reverse()
+      .sort((a, b) => (a.priority === "high" ? 0 : 1) - (b.priority === "high" ? 0 : 1));
   }
   async updateReport(id: string, status: ReportRecord["status"], resolution: string) {
     const r = this.reports.find((x) => x.id === id);
@@ -129,7 +167,7 @@ export class PgStore implements Store {
   }
   async getPlayer(id: string) {
     const r = await this.pool.query("select data from ozu_players where id = $1", [id]);
-    return (r.rows[0]?.data as PlayerRecord) ?? null;
+    return normalizeRecord((r.rows[0]?.data as PlayerRecord) ?? null);
   }
   async savePlayer(p: PlayerRecord) {
     await this.pool.query(
@@ -143,6 +181,15 @@ export class PgStore implements Store {
   async deletePlayer(id: string) {
     await this.pool.query("delete from ozu_players where id = $1", [id]);
   }
+  async hallTotals() {
+    const r = await this.pool.query(
+      `select data->>'hall' as hall, coalesce(sum((data->'progress'->>'hallPoints')::int), 0) as points
+       from ozu_players where data->>'hall' is not null and not banned group by 1`,
+    );
+    const t = emptyHallTotals();
+    for (const row of r.rows) if (row.hall in t) t[row.hall] = Number(row.points);
+    return t;
+  }
   async addReport(r: ReportRecord) {
     await this.pool.query(
       `insert into ozu_reports (id, reporter_id, target_id, reason, status, data, created_at)
@@ -152,8 +199,8 @@ export class PgStore implements Store {
   }
   async listReports(status?: ReportRecord["status"]) {
     const r = status
-      ? await this.pool.query("select data from ozu_reports where status = $1 order by created_at desc limit 500", [status])
-      : await this.pool.query("select data from ozu_reports order by created_at desc limit 500");
+      ? await this.pool.query("select data from ozu_reports where status = $1 order by (data->>'priority' = 'high') desc, created_at desc limit 500", [status])
+      : await this.pool.query("select data from ozu_reports order by (data->>'priority' = 'high') desc, created_at desc limit 500");
     return r.rows.map((x) => x.data as ReportRecord);
   }
   async updateReport(id: string, status: ReportRecord["status"], resolution: string) {

@@ -57,10 +57,25 @@ export function validateDisplayName(raw: unknown): { ok: true; name: string } | 
   return { ok: true, name };
 }
 
+// Contact details and links are hidden for everyone: it protects younger players
+// and cuts off the most common scam pattern ("DM me on WhatsApp", phishing links).
+const PHONE = /(?:\+?234|\b0)[\s.-]?[789][01](?:[\s.-]?\d){8}\b|(?:\d[\s.-]?){10,}\d/g;
+const LINK = /\b(?:https?:\/\/|www\.)\S+|\b[\w-]+\.(?:com|ng|net|org|io|me|ly|app|xyz|link|co|gg)\b(?:\/\S*)?/gi;
+const HANDLE = /(^|\s)@[\w.]{3,}/g;
+
+export function maskContactInfo(text: string): string {
+  return text
+    .replace(PHONE, "[number hidden]")
+    .replace(LINK, "[link hidden]")
+    .replace(HANDLE, "$1[handle hidden]");
+}
+
+const CONTROL = /[\u0000-\u001f\u007f​-‏‪-‮]/g;
+
 export function cleanChat(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   // Strip control characters and collapse whitespace.
-  const text = raw.replace(/[\u0000-\u001f\u007f​-‏‪-‮]/g, "").replace(/\s+/g, " ").trim();
+  const text = raw.replace(CONTROL, "").replace(/\s+/g, " ").trim();
   if (!text || text.length > CHAT_MAX) return null;
-  return maskProfanity(text);
+  return maskContactInfo(maskProfanity(text));
 }

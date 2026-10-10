@@ -88,9 +88,12 @@ interface Props {
   equipped?: string | null;
   motion: React.RefObject<Motion>;
   castShadow?: boolean;
+  backpack?: boolean;
 }
 
-export function Character({ avatar, equipped, motion, castShadow = true }: Props) {
+const backpackMats = ["#1b1240", "#c0262d", "#2a3d8f", "#0e8a5f", "#333333"].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 }));
+
+export function Character({ avatar, equipped, motion, castShadow = true, backpack = false }: Props) {
   const m = useMaterials(avatar);
   const fem = avatar.body === "fem";
   const shoulderW = fem ? 0.19 : 0.215;
@@ -246,6 +249,9 @@ export function Character({ avatar, equipped, motion, castShadow = true }: Props
               <mesh geometry={G.cylClosed} material={m.asoOke} position={[0.02, 0.12, -0.01]} rotation={[0.1, 0, -0.35]} scale={[0.11, 0.1, 0.115]} castShadow={cs} />
             )}
           </group>
+          {backpack && (
+            <mesh geometry={G.limb} material={backpackMats[(avatar.skin + avatar.palette) % backpackMats.length]} position={[0, 0.28, -0.17]} scale={[0.15, 0.1, 0.08]} castShadow={cs} />
+          )}
           {equipped === "gold-chain" && <mesh geometry={G.torus} material={m.gold} position={[0, 0.4, 0.04]} rotation={[1.25, 0, 0]} scale={[0.085, 0.085, 0.4]} />}
 
           {/* Arms */}

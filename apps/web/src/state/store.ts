@@ -1,13 +1,14 @@
 import { create } from "zustand";
 import {
   DEFAULT_AVATAR, sanitizeAvatar,
-  type Anim, type Avatar, type ChallengeItem, type Progress, type PublicPlayer, type Reward,
+  type AgeGroup, type Anim, type Avatar, type CampusEvent, type ChallengeItem, type HallStanding, type MapId,
+  type Progress, type PublicPlayer, type Reward,
 } from "@ozu/shared";
 
 export type Phase = "landing" | "create" | "playing";
 export type Conn = "offline" | "connecting" | "online" | "reconnecting" | "failed";
 export type Quality = "high" | "low";
-export type Panel = null | "activities" | "profile" | "settings" | "help" | "guidelines" | "player";
+export type Panel = null | "activities" | "profile" | "settings" | "help" | "guidelines" | "player" | "halls";
 
 export interface Remote extends PublicPlayer {
   /** Interpolation target from the latest snapshot. */
@@ -71,8 +72,20 @@ export const input = { joyX: 0, joyY: 0, run: false, keys: new Set<string>() };
 
 let seq = 1;
 
+export interface LiveEvent extends CampusEvent {
+  /** Local timestamp when the event ends. */
+  endsAt: number;
+}
+
 interface State {
   phase: Phase;
+  map: MapId;
+  traveling: MapId | null;
+  ageGroup: AgeGroup | null;
+  hall: string | null;
+  student: boolean;
+  event: LiveEvent | null;
+  halls: HallStanding[];
   conn: Conn;
   connError: string | null;
   name: string;
@@ -97,7 +110,8 @@ interface State {
   ping: number | null;
 
   set: (p: Partial<State>) => void;
-  setProfile: (name: string, avatar: Avatar) => void;
+  setProfile: (name: string, avatar: Avatar, hall: string | null) => void;
+  setAgeGroup: (a: AgeGroup) => void;
   updateSettings: (s: Partial<Settings>) => void;
   toast: (text: string, level?: Toast["level"]) => void;
   addChat: (line: Omit<ChatLine, "id">) => void;
@@ -106,6 +120,13 @@ interface State {
 
 export const useGame = create<State>((set, get) => ({
   phase: "landing",
+  map: "ozu",
+  traveling: null,
+  ageGroup: LS.get<AgeGroup | null>("ozu.ageGroup", null),
+  hall: LS.get<string | null>("ozu.hall", null),
+  student: false,
+  event: null,
+  halls: [],
   conn: "offline",
   connError: null,
   name: LS.get("ozu.name", ""),
@@ -130,10 +151,15 @@ export const useGame = create<State>((set, get) => ({
   ping: null,
 
   set: (p) => set(p),
-  setProfile: (name, avatar) => {
+  setProfile: (name, avatar, hall) => {
     LS.set("ozu.name", name);
     LS.set("ozu.avatar", avatar);
-    set({ name, avatar });
+    LS.set("ozu.hall", hall);
+    set({ name, avatar, hall });
+  },
+  setAgeGroup: (ageGroup) => {
+    LS.set("ozu.ageGroup", ageGroup);
+    set({ ageGroup });
   },
   updateSettings: (s) => {
     const settings = { ...get().settings, ...s };

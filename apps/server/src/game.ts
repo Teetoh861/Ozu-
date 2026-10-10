@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  CHALLENGE_GOAL, CHALLENGE_MAX_ITEMS, CHALLENGE_ZONE, COSMETICS, DAILY_GREET_REWARD_CAP, DISCOVER_RANGE, EMOTES,
-  INTERACT_RANGE, LOCATIONS, PICKUP_RANGE, REPORT_REASONS, REWARDS, RUN_SPEED, SPAWN, SPEED_TOLERANCE,
-  cleanChat, collides, clampToWorld, resolveMove,
-  type Anim, type ChallengeItem, type ClientMessage, type Emote, type PublicPlayer, type Reward, type ServerMessage,
+  CHALLENGE_GOAL, CHALLENGE_MAX_ITEMS, COSMETICS, DAILY_GREET_REWARD_CAP, DISCOVER_RANGE, EMOTES,
+  INTERACT_RANGE, LECTURE_RADIUS, LECTURE_SECONDS, LECTURE_VENUES, PICKUP_RANGE, REPORT_REASONS, REWARDS,
+  RUN_SPEED, SPEED_TOLERANCE, cleanChat, collides, clampToWorld, getMap, resolveMove,
+  type Anim, type CampusEvent, type ChallengeItem, type ClientMessage, type Emote, type HallStanding, type MapDef,
+  type MapId, type PublicPlayer, type Reward, type ServerMessage,
 } from "@ozu/shared";
 import { TokenBucket } from "./rateLimit";
 import type { PlayerRecord, Store } from "./store";
@@ -18,8 +19,8 @@ const ANIMS: Anim[] = ["idle", "walk", "run", "wave", "dance", "clap", "sit"];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class Session {
-  x = SPAWN.x;
-  z = SPAWN.z;
+  x = 0;
+  z = 0;
   ry = 0;
   anim: Anim = "idle";
   lastMoveAt = Date.now();
@@ -33,54 +34,83 @@ export class Session {
     chat: new TokenBucket(5, 0.5),
     action: new TokenBucket(10, 2),
     report: new TokenBucket(3, 1 / 60),
+    travel: new TokenBucket(2, 1 / 10),
   };
-  constructor(public conn: Conn, public record: PlayerRecord, public account: "guest" | "member") {
-    // Spread spawns so players don't stack.
-    const a = Math.random() * Math.PI * 2;
-    let [x, z] = clampToWorld(SPAWN.x + Math.cos(a) * 3, SPAWN.z + Math.sin(a) * 2);
-    if (collides(x, z)) [x, z] = [SPAWN.x, SPAWN.z];
+  constructor(public conn: Conn, public record: PlayerRecord, public account: "guest" | "member") {}
+
+  /** Place the player near (x, z), spreading players out so they don't stack. */
+  placeNear(map: MapDef, x: number, z: number) {
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2, r = i === 0 ? 0 : 1 + Math.random() * 2.5;
+      const [px, pz] = clampToWorld(x + Math.cos(a) * r, z + Math.sin(a) * r);
+      if (!collides(map, px, pz)) {
+        this.x = px;
+        this.z = pz;
+        this.lastMoveAt = Date.now();
+        return;
+      }
+    }
     this.x = x;
     this.z = z;
+    this.lastMoveAt = Date.now();
   }
   get id() {
     return this.record.id;
   }
   public(): PublicPlayer {
     const r = this.record;
-    return { id: r.id, name: r.name, avatar: r.avatar, equipped: r.progress.equipped, rep: r.progress.rep, x: this.x, z: this.z, ry: this.ry, anim: this.anim };
+    return {
+      id: r.id, name: r.name, avatar: r.avatar, equipped: r.progress.equipped, rep: r.progress.rep,
+      hall: r.hall, student: r.student, x: this.x, z: this.z, ry: this.ry, anim: this.anim,
+    };
   }
+}
+
+interface ActiveLecture {
+  event: CampusEvent;
+  endsAt: number;
 }
 
 export class District {
   sessions = new Map<string, Session>();
   items: ChallengeItem[] = [];
   challengeProgress = 0;
-  private snapTimer: NodeJS.Timeout | null = null;
+  map: MapDef;
+  lecture: ActiveLecture | null = null;
+  halls: HallStanding[] = [];
+  private timers: NodeJS.Timeout[] = [];
   private moved = false;
 
-  constructor(public id: string, private store: Store, private opts: { guestChat: boolean; max: number }) {
+  constructor(public id: string, mapId: MapId, private store: Store, private opts: { guestChat: boolean; max: number }) {
+    this.map = getMap(mapId);
     for (let i = 0; i < CHALLENGE_MAX_ITEMS; i++) this.items.push(this.spawnItem());
   }
 
-  start(hz: number) {
-    this.snapTimer = setInterval(() => this.broadcastSnapshot(), 1000 / hz);
+  start(hz: number, lectureIntervalS?: number) {
+    this.timers.push(setInterval(() => this.broadcastSnapshot(), 1000 / hz));
+    if (this.map.id === "unilag" && lectureIntervalS) {
+      // First lecture shortly after start, then on a steady rhythm.
+      this.timers.push(setTimeout(() => this.startLecture(), Math.min(45, lectureIntervalS) * 1000));
+      this.timers.push(setInterval(() => this.startLecture(), lectureIntervalS * 1000));
+    }
   }
   stop() {
-    if (this.snapTimer) clearInterval(this.snapTimer);
+    for (const t of this.timers) clearInterval(t);
   }
   get full() {
     return this.sessions.size >= this.opts.max;
   }
 
   private spawnItem(): ChallengeItem {
-    for (let tries = 0; tries < 50; tries++) {
+    const zone = this.map.challenge;
+    for (let tries = 0; tries < 60; tries++) {
       const a = Math.random() * Math.PI * 2;
-      const r = 5 + Math.random() * (CHALLENGE_ZONE.r - 5);
-      const x = CHALLENGE_ZONE.x + Math.cos(a) * r;
-      const z = CHALLENGE_ZONE.z + Math.sin(a) * r;
-      if (!collides(x, z, 0.6)) return { id: randomUUID().slice(0, 8), x: +x.toFixed(2), z: +z.toFixed(2) };
+      const r = Math.min(4, zone.r * 0.3) + Math.random() * zone.r * 0.7;
+      const x = zone.x + Math.cos(a) * r;
+      const z = zone.z + Math.sin(a) * r;
+      if (!collides(this.map, x, z, 0.6)) return { id: randomUUID().slice(0, 8), x: +x.toFixed(2), z: +z.toFixed(2) };
     }
-    return { id: randomUUID().slice(0, 8), x: 6, z: 6 };
+    return { id: randomUUID().slice(0, 8), x: this.map.spawn.x + 3, z: this.map.spawn.z };
   }
 
   broadcast(msg: ServerMessage, except?: string, filter?: (s: Session) => boolean) {
@@ -94,25 +124,44 @@ export class District {
     this.broadcast({ t: "snap", p });
   }
 
-  join(session: Session, guestToken: string | null) {
-    // A second connection for the same identity replaces the first.
+  currentEvent(): CampusEvent | null {
+    if (!this.lecture) return null;
+    return { ...this.lecture.event, secondsLeft: Math.max(0, Math.round((this.lecture.endsAt - Date.now()) / 1000)) };
+  }
+
+  setHalls(halls: HallStanding[]) {
+    this.halls = halls;
+    if (this.map.id === "unilag") this.broadcast({ t: "halls", halls });
+  }
+
+  /** Add a player. `arrival` overrides the default spawn (used when travelling in). */
+  join(session: Session, guestToken: string | null, arrival?: { x: number; z: number }) {
     const existing = this.sessions.get(session.id);
-    if (existing) {
+    if (existing && existing !== session) {
       existing.conn.close(4001, "Signed in elsewhere");
       this.sessions.delete(session.id);
       this.broadcast({ t: "leave", id: session.id });
     }
+    const at = arrival ?? this.map.spawn;
+    session.placeNear(this.map, at.x, at.z);
+    session.contributed = 0;
     this.sessions.set(session.id, session);
+    const r = session.record;
     session.conn.send({
       t: "welcome",
       you: session.public(),
-      progress: session.record.progress,
+      progress: r.progress,
       guestToken,
       players: [...this.sessions.values()].filter((s) => s.id !== session.id).map((s) => s.public()),
       items: this.items,
       challenge: { progress: this.challengeProgress, goal: CHALLENGE_GOAL },
-      blocked: session.record.blocked,
+      blocked: r.blocked,
       account: session.account,
+      map: this.map.id,
+      hall: r.hall,
+      student: r.student,
+      event: this.currentEvent(),
+      halls: this.halls,
     });
     this.broadcast({ t: "join", player: session.public() }, session.id);
     this.moved = true;
@@ -144,6 +193,8 @@ export class District {
     const p = s.record.progress;
     p.coins += base.coins;
     p.rep += base.rep;
+    // Everything earned on campus also counts for your hall.
+    if (this.map.id === "unilag" && s.record.hall) p.hallPoints += base.rep;
     const newly = COSMETICS.filter((c) => p.rep >= c.repRequired && !p.unlocked.includes(c.id));
     for (const c of newly) p.unlocked.push(c.id);
     const reward: Reward = { coins: base.coins, rep: base.rep, reason };
@@ -155,6 +206,37 @@ export class District {
   private blockedBetween(a: Session, b: Session) {
     return a.record.blocked.includes(b.id) || b.record.blocked.includes(a.id);
   }
+
+  // ---------------- Campus "lecture rush" events ----------------
+
+  startLecture(venueId?: string) {
+    if (this.lecture || this.sessions.size === 0) return;
+    const venue = LECTURE_VENUES.find((v) => v.id === venueId) ?? LECTURE_VENUES[Math.floor(Math.random() * LECTURE_VENUES.length)];
+    const event: CampusEvent = {
+      id: randomUUID().slice(0, 8), kind: "lecture", title: `Lecture starting at the ${venue.name}!`,
+      venue: venue.name, x: venue.x, z: venue.z, secondsLeft: LECTURE_SECONDS,
+    };
+    this.lecture = { event, endsAt: Date.now() + LECTURE_SECONDS * 1000 };
+    this.broadcast({ t: "event", event });
+    this.timers.push(setTimeout(() => void this.endLecture(), LECTURE_SECONDS * 1000));
+  }
+
+  async endLecture() {
+    const l = this.lecture;
+    if (!l) return;
+    this.lecture = null;
+    const present = [...this.sessions.values()].filter((s) => Math.hypot(s.x - l.event.x, s.z - l.event.z) <= LECTURE_RADIUS + 0.75);
+    for (const s of this.sessions.values()) {
+      const you = present.includes(s);
+      s.conn.send({ t: "event", event: null, result: { venue: l.event.venue, attended: present.length, you } });
+    }
+    for (const s of present) {
+      s.record.progress.lecturesAttended++;
+      await this.grant(s, REWARDS.lecture, `Made it to class at the ${l.event.venue}`);
+    }
+  }
+
+  // ---------------- Messages ----------------
 
   async handle(s: Session, msg: ClientMessage) {
     switch (msg.t) {
@@ -170,10 +252,10 @@ export class District {
         const dt = Math.min((now - s.lastMoveAt) / 1000, 1);
         const maxDist = (RUN_SPEED + SPEED_TOLERANCE) * dt + 0.35;
         const dist = Math.hypot(x - s.x, z - s.z);
-        if (dist > maxDist || collides(x, z)) {
+        if (dist > maxDist || collides(this.map, x, z)) {
           // Reject teleports/wall-clipping but keep honest players moving: advance toward the target as far as allowed.
           const k = dist > 0 ? Math.min(1, maxDist / dist) : 0;
-          [s.x, s.z] = resolveMove(s.x, s.z, s.x + (x - s.x) * k, s.z + (z - s.z) * k);
+          [s.x, s.z] = resolveMove(this.map, s.x, s.z, s.x + (x - s.x) * k, s.z + (z - s.z) * k);
           s.conn.send({ t: "correct", x: s.x, z: s.z });
           if (dist > 20) log("security", "movement_rejected", { player: s.id, dist: +dist.toFixed(1) });
         } else {
@@ -234,13 +316,14 @@ export class District {
 
       case "discover": {
         if (!s.limits.action.take()) return;
-        const loc = LOCATIONS.find((l) => l.id === msg.locationId);
+        const loc = this.map.locations.find((l) => l.id === msg.locationId);
         const p = s.record.progress;
         if (!loc || p.discovered.includes(loc.id)) return;
         if (Math.hypot(loc.x - s.x, loc.z - s.z) > DISCOVER_RANGE + 1) return;
         p.discovered.push(loc.id);
         await this.grant(s, REWARDS.discover, `Discovered ${loc.name}`);
-        if (p.discovered.length === LOCATIONS.length) await this.grant(s, { coins: 30, rep: 15 }, "Explored the whole district");
+        if (this.map.locations.every((l) => p.discovered.includes(l.id)))
+          await this.grant(s, { coins: 30, rep: 15 }, `Explored all of ${this.map.short}`);
         return;
       }
 
@@ -255,7 +338,7 @@ export class District {
         s.record.progress.cleanups++;
         s.contributed++;
         this.challengeProgress++;
-        await this.grant(s, REWARDS.pickup, "Clean-up drive");
+        await this.grant(s, REWARDS.pickup, this.map.challenge.label);
         if (this.challengeProgress >= CHALLENGE_GOAL) {
           this.challengeProgress = 0;
           this.broadcast({ t: "challenge", progress: CHALLENGE_GOAL, goal: CHALLENGE_GOAL, completed: true });
@@ -276,6 +359,7 @@ export class District {
         const target = this.sessions.get(msg.targetId);
         if (!target || target === s || !REPORT_REASONS.includes(msg.reason)) return;
         const details = typeof msg.details === "string" ? msg.details.slice(0, 500) : "";
+        const priority = s.record.minor || target.record.minor || msg.reason === "sexual" ? "high" : "normal";
         await this.store.addReport({
           id: randomUUID(),
           reporterId: s.id,
@@ -285,9 +369,10 @@ export class District {
           details,
           evidence: target.recentChat.slice(-10),
           status: "open",
+          priority,
           createdAt: Date.now(),
         });
-        log("security", "player_reported", { reporter: s.id, target: target.id, reason: msg.reason });
+        log("security", "player_reported", { reporter: s.id, target: target.id, reason: msg.reason, priority });
         this.notice(s, "Thanks — our moderators will review this report.", "info");
         return;
       }
@@ -313,6 +398,11 @@ export class District {
     }
   }
 
+  /** The transit stop the player is standing at for a given destination, if any. */
+  transitTo(s: Session, to: MapId) {
+    return this.map.transit.find((t) => t.to === to && Math.hypot(t.x - s.x, t.z - s.z) <= 7);
+  }
+
   private async rewardGreeting(s: Session, other: Session) {
     const now = Date.now();
     const day = new Date().toISOString().slice(0, 10);
@@ -321,7 +411,6 @@ export class District {
     const last = r.greetPairs[other.id] ?? 0;
     if (now - last < DAY_MS) return; // one rewarded greeting per pair per day
     if (r.greetDay.count >= DAILY_GREET_REWARD_CAP) return;
-    r.greetPairs[other.id] = now;
     // Prune old pairs to keep the record small.
     for (const [k, v] of Object.entries(r.greetPairs)) if (now - v > DAY_MS) delete r.greetPairs[k];
     r.greetPairs[other.id] = now;

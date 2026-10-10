@@ -1,5 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { CHALLENGE_GOAL, LOCATIONS, containsProfanity, validateDisplayName, cleanChat, collides, BUILDINGS, type ServerMessage } from "@ozu/shared";
+import { CHALLENGE_GOAL, MAPS, LECTURE_VENUES, containsProfanity, validateDisplayName, cleanChat, collides, type ServerMessage } from "@ozu/shared";
+const LOCATIONS = MAPS.ozu.locations;
+const BUILDINGS = MAPS.ozu.buildings;
 import { District, Session, type Conn } from "../src/game";
 import { MemoryStore, emptyProgress, type PlayerRecord } from "../src/store";
 import { issueGuestToken, verifyGuestToken } from "../src/auth";
@@ -15,14 +17,14 @@ function fakeConn() {
 }
 
 function record(id: string, name = id): PlayerRecord {
-  return { id, name, avatar: { body: "masc", skin: 0, hair: "afro", outfit: "ankara", palette: 0 }, progress: emptyProgress(), greetPairs: {}, greetDay: { day: "", count: 0 }, blocked: [], banned: null, createdAt: 0, updatedAt: 0 };
+  return { id, name, avatar: { body: "masc", skin: 0, hair: "afro", outfit: "ankara", palette: 0 }, progress: emptyProgress(), greetPairs: {}, greetDay: { day: "", count: 0 }, blocked: [], banned: null, minor: false, hall: null, hallChangedAt: 0, student: false, createdAt: 0, updatedAt: 0 };
 }
 
 let store: MemoryStore;
 let d: District;
 beforeEach(() => {
   store = new MemoryStore();
-  d = new District("t", store, { guestChat: true, max: 10 });
+  d = new District("t", "ozu", store, { guestChat: true, max: 10 });
 });
 
 function join(id: string, x = 0, z = -10) {
@@ -58,8 +60,8 @@ describe("moderation", () => {
 describe("world", () => {
   it("collides with buildings", () => {
     const b = BUILDINGS[0];
-    expect(collides(b.x, b.z)).toBe(true);
-    expect(collides(0, -10)).toBe(false);
+    expect(collides(MAPS.ozu, b.x, b.z)).toBe(true);
+    expect(collides(MAPS.ozu, 0, -10)).toBe(false);
   });
 });
 
@@ -150,5 +152,81 @@ describe("district", () => {
     const a = join("a");
     await d.handle(a.s, { t: "equip", cosmeticId: "gold-chain" });
     expect(a.s.record.progress.equipped).toBeNull();
+  });
+});
+
+describe("contact info", () => {
+  it("hides phone numbers, links and handles but keeps normal numbers", () => {
+    expect(cleanChat("call me 08031234567")).toBe("call me [number hidden]");
+    expect(cleanChat("+234 803 123 4567 abeg")).toBe("[number hidden] abeg");
+    expect(cleanChat("check www.scam.com now")).toBe("check [link hidden] now");
+    expect(cleanChat("follow @tobi_lagos")).toBe("follow [handle hidden]");
+    expect(cleanChat("I scored 95 in CSC 201")).toBe("I scored 95 in CSC 201");
+  });
+});
+
+describe("campus", () => {
+  let campus: District;
+  beforeEach(() => {
+    campus = new District("u", "unilag", store, { guestChat: true, max: 10 });
+  });
+  function joinCampus(id: string, hall: string | null) {
+    const c = fakeConn();
+    const rec = record(id);
+    rec.hall = hall;
+    const s = new Session(c, rec, "guest");
+    campus.join(s, null);
+    return { s, c };
+  }
+
+  it("spawns players on the campus map, not inside buildings", () => {
+    const { s, c } = joinCampus("a", "jaja");
+    expect(collides(MAPS.unilag, s.x, s.z)).toBe(false);
+    const w = c.sent.find((m) => m.t === "welcome");
+    expect(w && w.t === "welcome" && w.map).toBe("unilag");
+  });
+
+  it("rewards players who reach the lecture venue in time and credits their hall", async () => {
+    const a = joinCampus("a", "jaja");
+    const b = joinCampus("b", "moremi");
+    campus.startLecture("u-science");
+    const v = LECTURE_VENUES.find((x) => x.id === "u-science")!;
+    a.s.x = v.x; a.s.z = v.z;
+    b.s.x = v.x + 30; b.s.z = v.z;
+    await campus.endLecture();
+    expect(a.s.record.progress.lecturesAttended).toBe(1);
+    expect(a.s.record.progress.hallPoints).toBe(8);
+    expect(b.s.record.progress.lecturesAttended).toBe(0);
+    const res = b.c.sent.find((m) => m.t === "event" && m.result);
+    expect(res && res.t === "event" && res.result?.you).toBe(false);
+  });
+
+  it("only lets players travel from a bus stop", () => {
+    const a = joinCampus("a", null);
+    a.s.x = 30; a.s.z = 30;
+    expect(campus.transitTo(a.s, "ozu")).toBeUndefined();
+    const stop = MAPS.unilag.transit[0];
+    a.s.x = stop.x; a.s.z = stop.z;
+    expect(campus.transitTo(a.s, "ozu")).toBeDefined();
+  });
+
+  it("aggregates hall totals from saved players", async () => {
+    const a = joinCampus("a", "jaja");
+    a.s.record.progress.hallPoints = 40;
+    await campus.persist(a.s);
+    const t = await store.hallTotals();
+    expect(t.jaja).toBe(40);
+    expect(t.moremi).toBe(0);
+  });
+});
+
+describe("safeguards", () => {
+  it("marks reports involving a minor as high priority", async () => {
+    const a = join("a");
+    const b = join("b");
+    b.s.record.minor = true;
+    await d.handle(a.s, { t: "report", targetId: "b", reason: "harassment" });
+    const [r] = await store.listReports();
+    expect(r.priority).toBe("high");
   });
 });

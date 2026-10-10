@@ -1,12 +1,12 @@
 import http from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
-  DEFAULT_AVATAR, SNAPSHOT_HZ, sanitizeAvatar, validateDisplayName,
-  type ClientMessage, type ServerMessage,
+  DEFAULT_AVATAR, HALLS, LECTURE_INTERVAL_SECONDS, MAP_IDS, SNAPSHOT_HZ, getMap, sanitizeAvatar, validateDisplayName,
+  type ClientMessage, type HallStanding, type MapId, type ServerMessage,
 } from "@ozu/shared";
 import { assertProductionConfig, config } from "./config";
 import { District, Session, type Conn } from "./game";
-import { FileStore, PgStore, emptyProgress, type PlayerRecord, type Store } from "./store";
+import { FileStore, PgStore, emptyProgress, normalizeRecord, type PlayerRecord, type Store } from "./store";
 import { issueGuestToken, safeEqual, verifyGuestToken, verifyMemberToken } from "./auth";
 import { log } from "./log";
 
@@ -17,14 +17,30 @@ const districts: District[] = [];
 const startedAt = Date.now();
 let connectionFailures = 0;
 
-function districtFor(): District {
-  const open = districts.find((d) => !d.full);
+let hallStandings: HallStanding[] = HALLS.map((h) => ({ id: h.id, points: 0 }));
+
+function districtFor(mapId: MapId): District {
+  const open = districts.find((d) => d.map.id === mapId && !d.full);
   if (open) return open;
-  const d = new District(`ozu-${districts.length + 1}`, store, { guestChat: config.guestChat, max: config.maxPerDistrict });
-  d.start(SNAPSHOT_HZ);
+  const n = districts.filter((d) => d.map.id === mapId).length + 1;
+  const d = new District(`${mapId}-${n}`, mapId, store, { guestChat: config.guestChat, max: config.maxPerDistrict });
+  d.halls = hallStandings;
+  d.start(SNAPSHOT_HZ, config.lectureIntervalS || LECTURE_INTERVAL_SECONDS);
   districts.push(d);
   return d;
 }
+
+async function refreshHalls() {
+  try {
+    const totals = await store.hallTotals();
+    hallStandings = HALLS.map((h) => ({ id: h.id, points: totals[h.id] ?? 0 })).sort((a, b) => b.points - a.points);
+    for (const d of districts) d.setHalls(hallStandings);
+  } catch (e) {
+    log("error", "hall_refresh_failed", { error: String(e) });
+  }
+}
+
+const STUDENT_DOMAINS = ["live.unilag.edu.ng", "unilag.edu.ng"];
 
 function findSession(id: string) {
   for (const d of districts) {
@@ -85,7 +101,8 @@ const server = http.createServer(async (req, res) => {
       const mem = process.memoryUsage();
       return json(res, 200, {
         online: districts.reduce((n, d) => n + d.sessions.size, 0),
-        districts: districts.map((d) => ({ id: d.id, players: d.sessions.size, challenge: d.challengeProgress })),
+        districts: districts.map((d) => ({ id: d.id, map: d.map.id, players: d.sessions.size, challenge: d.challengeProgress, lecture: !!d.lecture })),
+        halls: hallStandings,
         connectionFailures,
         rssMb: Math.round(mem.rss / 1e6),
       });
@@ -192,7 +209,7 @@ function onConnection(ws: WebSocket, ip: string) {
           return ws.close(4002, result.error.slice(0, 120));
         }
         if (ws.readyState !== ws.OPEN) return;
-        district = districtFor();
+        district = districtFor("ozu");
         session = new Session(conn, result.record, result.account);
         district.join(session, result.guestToken);
       } catch (e) {
@@ -202,6 +219,18 @@ function onConnection(ws: WebSocket, ip: string) {
       } finally {
         helloPending = false;
       }
+      return;
+    }
+    if (msg.t === "travel") {
+      const to = msg.to;
+      if (!MAP_IDS.includes(to) || to === district!.map.id || !session.limits.travel.take()) return;
+      if (!district!.transitTo(session, to)) return conn.send({ t: "notice", level: "warn", text: "Walk to the bus stop to travel." });
+      const from = district!;
+      await from.leave(session);
+      if (ws.readyState !== ws.OPEN) return;
+      district = districtFor(to);
+      district.join(session, null, getMap(to).arrival[from.map.id]);
+      log("info", "player_travel", { player: session.id, from: from.map.id, to });
       return;
     }
     try {
@@ -228,7 +257,11 @@ async function handshake(msg: Extract<ClientMessage, { t: "hello" }>): Promise<
   if (!nameCheck.ok) return { error: nameCheck.error };
   const avatar = sanitizeAvatar(msg.avatar ?? DEFAULT_AVATAR);
 
+  if (msg.ageGroup !== "16-17" && msg.ageGroup !== "18+") return { error: "Please confirm your age to play." };
+  const hall = typeof msg.hall === "string" && HALLS.some((h) => h.id === msg.hall) ? msg.hall : null;
+
   let id: string;
+  let student = false;
   let account: "guest" | "member" = "guest";
   let guestToken: string | null = null;
   const guestId = verifyGuestToken(msg.guestToken);
@@ -238,6 +271,8 @@ async function handshake(msg: Extract<ClientMessage, { t: "hello" }>): Promise<
     if (!member) return { error: "Your session has expired. Please sign in again." };
     id = member.id;
     account = "member";
+    const domain = member.email?.split("@")[1]?.toLowerCase() ?? "";
+    student = STUDENT_DOMAINS.includes(domain);
   } else if (guestId) {
     id = guestId;
     guestToken = msg.guestToken!;
@@ -247,12 +282,12 @@ async function handshake(msg: Extract<ClientMessage, { t: "hello" }>): Promise<
     guestToken = g.token;
   }
 
-  let record = await store.getPlayer(id);
+  let record = normalizeRecord(await store.getPlayer(id));
   // Guest -> member migration: first sign-in carries the device's guest progress over.
   if (!record && account === "member" && guestId) {
     const guest = await store.getPlayer(guestId);
     if (guest && !guest.banned) {
-      record = { ...guest, id };
+      record = normalizeRecord({ ...guest, id })!;
       await store.deletePlayer(guestId);
       log("info", "guest_migrated", { from: guestId, to: id });
     }
@@ -260,7 +295,8 @@ async function handshake(msg: Extract<ClientMessage, { t: "hello" }>): Promise<
   const now = Date.now();
   record ??= {
     id, name: nameCheck.name, avatar, progress: emptyProgress(), greetPairs: {},
-    greetDay: { day: "", count: 0 }, blocked: [], banned: null, createdAt: now, updatedAt: now,
+    greetDay: { day: "", count: 0 }, blocked: [], banned: null, minor: false, hall: null, hallChangedAt: 0,
+    student: false, createdAt: now, updatedAt: now,
   };
   if (record.banned) {
     log("security", "banned_login_attempt", { player: id });
@@ -268,15 +304,31 @@ async function handshake(msg: Extract<ClientMessage, { t: "hello" }>): Promise<
   }
   record.name = nameCheck.name;
   record.avatar = avatar;
+  // Once someone says they're under 18 the record stays protected; only an admin can lift it.
+  record.minor = record.minor || msg.ageGroup === "16-17";
+  record.student = record.student || student;
+  // Hall changes are limited to once every 30 days so points can't be shuffled between halls.
+  if (hall !== record.hall) {
+    if (!record.hall || now - record.hallChangedAt > 30 * DAY_MS) {
+      record.hall = hall;
+      record.hallChangedAt = now;
+      record.progress.hallPoints = 0;
+    }
+  }
   await store.savePlayer(record);
   return { record, account, guestToken };
 }
 
 // ---------- Lifecycle ----------
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 async function main() {
   await store.init();
-  districtFor();
+  await refreshHalls();
+  districtFor("ozu");
+  districtFor("unilag");
+  setInterval(() => void refreshHalls(), 60_000);
   server.listen(config.port, () =>
     log("info", "server_started", { port: config.port, store: config.databaseUrl ? "postgres" : "file", auth: config.supabaseUrl ? "supabase+guest" : "guest" }),
   );

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { COSMETICS, LOCATIONS, REPORT_REASONS, type ReportReason } from "@ozu/shared";
+import { COSMETICS, HALLS, REPORT_REASONS, getMap, hallName, type ReportReason } from "@ozu/shared";
 import { useGame, persist } from "../state/store";
 import { client } from "../net/client";
 import { accountsEnabled } from "../net/auth";
@@ -26,8 +26,8 @@ export function Guidelines({ onClose }: { onClose: () => void }) {
       <p>Ozu is a shared space. Everyone here should feel welcome and safe.</p>
       <ol className="rules">
         <li><strong>Respect people.</strong> No harassment, bullying, threats, or hate based on ethnicity, tribe, religion, gender, sexuality or disability.</li>
-        <li><strong>Keep it adult-appropriate.</strong> No sexual content or solicitation. Ozu is for players aged 18+.</li>
-        <li><strong>Protect privacy.</strong> Never share anyone's real address, phone number, account details or location — including your own.</li>
+        <li><strong>Keep it clean.</strong> No sexual content or solicitation. Ozu is for players aged 16+, and players under 18 get extra protections. Adults must never pressure younger players to move a conversation off Ozu.</li>
+        <li><strong>Protect privacy.</strong> Never share anyone's real address, phone number, social handles, account details or location — including your own. Ozu hides phone numbers and links in chat automatically.</li>
         <li><strong>No scams or spam.</strong> No selling, phishing, "send me money" schemes, or flooding chat.</li>
         <li><strong>Play fair.</strong> Don't exploit bugs or use tools to cheat activities or rewards.</li>
         <li><strong>Don't impersonate.</strong> No pretending to be staff, moderators or real people.</li>
@@ -39,11 +39,21 @@ export function Guidelines({ onClose }: { onClose: () => void }) {
 }
 
 export function ActivitiesPanel() {
-  const { progress, challenge, set } = useGame();
+  const { progress, challenge, set, map, hall } = useGame();
   const p = progress;
   const discovered = p?.discovered ?? [];
+  const mapDef = getMap(map);
+  const LOCATIONS = mapDef.locations;
+  const found = LOCATIONS.filter((l) => discovered.includes(l.id)).length;
   return (
-    <Modal title="Activities" onClose={() => set({ panel: null })}>
+    <Modal title={`Activities — ${mapDef.short}`} onClose={() => set({ panel: null })}>
+      {map === "unilag" && (
+        <div className="activity">
+          <h3>🔔 Lecture rush</h3>
+          <p>Every few minutes a lecture is announced. Race to the venue (follow the green beam) before the countdown ends. Everyone who makes it earns coins, rep and points for their hall.</p>
+          <p className="muted small">Lectures attended: {p?.lecturesAttended ?? 0}{hall ? ` · Your hall: ${hallName(hall)} (${p?.hallPoints ?? 0} pts from you)` : " · Pick a hall in Edit character to earn hall points"}</p>
+        </div>
+      )}
       <div className="activity">
         <h3>👋 Meet &amp; greet</h3>
         <p>Walk up to another player and press <kbd>E</kbd> (or tap <em>Greet</em>). You both earn coins and rep — once per person per day.</p>
@@ -51,8 +61,8 @@ export function ActivitiesPanel() {
       </div>
       <div className="activity">
         <h3>🧭 Explore the district</h3>
-        <p>Follow the orange light beams to discover named places.</p>
-        <Meter value={discovered.length} max={LOCATIONS.length} label={`${discovered.length} / ${LOCATIONS.length} places`} />
+        <p>Follow the orange light beams to discover named places. {map === "ozu" ? "Catch a danfo at Danfo Park to visit Unilag." : "The danfo at the Main Gate goes back to Ozu District."}</p>
+        <Meter value={found} max={LOCATIONS.length} label={`${found} / ${LOCATIONS.length} places`} />
         <ul className="loc-list">
           {LOCATIONS.map((l) => (
             <li key={l.id} className={discovered.includes(l.id) ? "done" : ""}>
@@ -63,8 +73,8 @@ export function ActivitiesPanel() {
         </ul>
       </div>
       <div className="activity">
-        <h3>♻️ Community clean-up</h3>
-        <p>Pick up litter bags around Ozu Plaza. When the district reaches the goal together, everyone who helped earns a bonus.</p>
+        <h3>♻️ {mapDef.challenge.label}</h3>
+        <p>Pick up litter bags {map === "unilag" ? "around Lagoon Front" : "around Ozu Plaza"}. When everyone here reaches the goal together, everyone who helped earns a bonus.</p>
         <Meter value={challenge.progress} max={challenge.goal} label={`District: ${challenge.progress} / ${challenge.goal} bags`} />
         <p className="muted small">You've collected {p?.cleanups ?? 0} bags and completed {p?.challengesCompleted ?? 0} drives.</p>
       </div>
@@ -250,6 +260,34 @@ export function ReportModal() {
           <button className="btn danger">Send report</button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+export function HallsPanel() {
+  const { halls, hall, set, progress } = useGame();
+  const max = Math.max(1, ...halls.map((h) => h.points));
+  return (
+    <Modal title="Hall leaderboard" onClose={() => set({ panel: null })}>
+      <p className="muted">Everything players earn on campus counts for their hall: lectures, exploring, greetings and clean-ups.</p>
+      <ol className="halls">
+        {(halls.length ? halls : HALLS.map((h) => ({ id: h.id, points: 0 }))).map((s, i) => {
+          const h = HALLS.find((x) => x.id === s.id)!;
+          return (
+            <li key={s.id} className={s.id === hall ? "mine" : ""}>
+              <span className="pos">{["🥇", "🥈", "🥉"][i] ?? i + 1}</span>
+              <span className="name"><span className="hall-dot" style={{ background: h.color }} /> {h.name}{s.id === hall ? " (you)" : ""}</span>
+              <span className="bar"><span style={{ width: `${(s.points / max) * 100}%`, background: h.color }} /></span>
+              <strong>{s.points}</strong>
+            </li>
+          );
+        })}
+      </ol>
+      {hall ? (
+        <p className="small">You've earned <strong>{progress?.hallPoints ?? 0}</strong> points for {hallName(hall)}.</p>
+      ) : (
+        <p className="small">You haven't picked a hall. Go to <strong>Profile → Edit character</strong> to rep one.</p>
+      )}
     </Modal>
   );
 }

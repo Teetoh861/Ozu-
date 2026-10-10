@@ -1,5 +1,5 @@
-import type { Anim, ClientMessage, ServerMessage } from "@ozu/shared";
-import { local, useGame, persist } from "../state/store";
+import { getMap, type Anim, type ClientMessage, type MapId, type ServerMessage } from "@ozu/shared";
+import { camState, local, useGame, persist } from "../state/store";
 import { getAccessToken } from "./auth";
 
 const SERVER_URL: string =
@@ -29,7 +29,10 @@ class GameClient {
     this.ws = ws;
     ws.onopen = () => {
       const s = useGame.getState();
-      this.send({ t: "hello", guestToken: persist.get<string | undefined>("ozu.guestToken", undefined), accessToken: accessToken ?? undefined, name: s.name, avatar: s.avatar });
+      this.send({
+        t: "hello", guestToken: persist.get<string | undefined>("ozu.guestToken", undefined), accessToken: accessToken ?? undefined,
+        name: s.name, avatar: s.avatar, ageGroup: s.ageGroup ?? "18+", hall: s.hall,
+      });
     };
     ws.onmessage = (e) => {
       try {
@@ -75,6 +78,29 @@ class GameClient {
     useGame.getState().set({ conn: "offline", players: {}, meId: null });
   }
 
+  /** Ride to another district. Offline, the switch happens locally. */
+  travel(to: MapId) {
+    const g = useGame.getState();
+    if (g.traveling) return;
+    g.set({ traveling: to, prompt: null });
+    if (this.online) {
+      this.send({ t: "travel", to });
+      // If the server refuses (not at a stop), clear the overlay after a moment.
+      window.setTimeout(() => {
+        if (useGame.getState().traveling === to) useGame.getState().set({ traveling: null });
+      }, 8000);
+      return;
+    }
+    window.setTimeout(() => {
+      const from = useGame.getState().map;
+      const at = getMap(to).arrival[from] ?? getMap(to).spawn;
+      local.x = at.x;
+      local.z = at.z;
+      camState.yaw = to === "unilag" ? 0 : Math.PI;
+      useGame.getState().set({ map: to, traveling: null, players: {}, items: [], event: null });
+    }, 1400);
+  }
+
   retry() {
     this.attempts = 0;
     void this.connect();
@@ -113,11 +139,15 @@ class GameClient {
         if (m.guestToken) persist.set("ozu.guestToken", m.guestToken);
         local.x = m.you.x;
         local.z = m.you.z;
+        // Face into the district on arrival: campus lies north of the gate, the Ozu plaza south of the park.
+        if (m.map !== g.map || !g.meId) camState.yaw = m.map === "unilag" ? 0 : Math.PI;
         const players: Record<string, ReturnType<typeof useGame.getState>["players"][string]> = {};
         for (const p of m.players) players[p.id] = { ...p, tx: p.x, tz: p.z, tr: p.ry };
         g.set({
           conn: "online", connError: null, meId: m.you.id, progress: m.progress, players, items: m.items,
-          challenge: m.challenge, blocked: m.blocked, account: m.account,
+          challenge: m.challenge, blocked: m.blocked, account: m.account, map: m.map, traveling: null,
+          hall: m.hall, student: m.student, halls: m.halls,
+          event: m.event ? { ...m.event, endsAt: Date.now() + m.event.secondsLeft * 1000 } : null,
         });
         this.startTimers();
         return;
@@ -184,6 +214,26 @@ class GameClient {
       case "kicked":
         this.wantOpen = false;
         g.set({ conn: "failed", connError: m.reason });
+        return;
+      case "event":
+        if (m.event) {
+          g.set({ event: { ...m.event, endsAt: Date.now() + m.event.secondsLeft * 1000 } });
+          g.toast(`📚 ${m.event.title} Get there before the bell!`, "warn");
+        } else {
+          g.set({ event: null });
+          if (m.result) {
+            const others = m.result.attended - (m.result.you ? 1 : 0);
+            g.toast(
+              m.result.you
+                ? `✅ You made it to class${others > 0 ? ` with ${others} other${others > 1 ? "s" : ""}` : ""}!`
+                : `🔔 Class started at the ${m.result.venue}. ${m.result.attended} made it — catch the next one!`,
+              m.result.you ? "reward" : "info",
+            );
+          }
+        }
+        return;
+      case "halls":
+        g.set({ halls: m.halls });
         return;
       case "pong":
         g.set({ ping: Math.round(performance.now() - m.n) });

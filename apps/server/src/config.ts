@@ -19,6 +19,8 @@ export const config = {
   /** Whether guests may use text chat. Defaults to true only when member accounts are unavailable. */
   guestChat: process.env.GUEST_CHAT ? process.env.GUEST_CHAT === "true" : !supabaseUrl,
   maxPerDistrict: num(process.env.MAX_PLAYERS_PER_DISTRICT, 40),
+  /** Seconds between campus lecture-rush events (and delay before the first). */
+  lectureIntervalS: num(process.env.LECTURE_INTERVAL_SECONDS, 0),
   production: process.env.NODE_ENV === "production",
 };
 

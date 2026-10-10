@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { BUILDINGS, LOCATIONS, WATER, WORLD_HALF, type Anim } from "@ozu/shared";
+import { WORLD_HALF, getMap, type Anim } from "@ozu/shared";
 import { camState, input, local, useGame } from "../state/store";
 import { client, multiplayerConfigured } from "../net/client";
 import { GameCanvas } from "../world/GameCanvas";
+import { LabelLayer } from "../world/labels";
 import { playEmote } from "../world/Players";
 import { formatHour, gameHour } from "../world/time";
 import { Logo } from "../App";
-import { ActivitiesPanel, HelpPanel, Meter, PlayerCard, ProfilePanel, ReportModal, SettingsPanel } from "./Panels";
+import { ActivitiesPanel, HallsPanel, HelpPanel, Meter, PlayerCard, ProfilePanel, ReportModal, SettingsPanel } from "./Panels";
 import { useAmbientSound } from "./sound";
 
 export default function Play() {
@@ -28,16 +29,20 @@ export default function Play() {
   return (
     <div className="play">
       <GameCanvas />
+      <LabelLayer />
       <TopBar />
       <ConnectionBanner />
       <Minimap />
       <ChallengeHud />
+      <EventBanner />
       <InteractionPrompt />
       <Chat />
       <EmoteBar />
       <TouchControls />
       <Toasts />
+      <TravelOverlay />
       {panel === "activities" && <ActivitiesPanel />}
+      {panel === "halls" && <HallsPanel />}
       {panel === "profile" && <ProfilePanel />}
       {panel === "settings" && <SettingsPanel />}
       {panel === "help" && <HelpPanel />}
@@ -89,6 +94,7 @@ function TopBar() {
   const progress = useGame((s) => s.progress);
   const online = useGame((s) => Object.keys(s.players).length + (s.conn === "online" ? 1 : 0));
   const set = useGame((s) => s.set);
+  const map = useGame((s) => s.map);
   const [clock, setClock] = useState(formatHour(gameHour()));
   useEffect(() => {
     const t = setInterval(() => setClock(formatHour(gameHour())), 5000);
@@ -100,10 +106,12 @@ function TopBar() {
         <Logo small />
         <div className="stat" title="Coins (no real-world value)"><span className="coin" aria-hidden>●</span>{progress?.coins ?? 0}</div>
         <div className="stat" title="Reputation">★ {progress?.rep ?? 0}</div>
+        <div className="stat place" title="Where you are">📍 {getMap(map).short}</div>
         <div className="stat muted hide-sm" title="In-game time">{clock}</div>
         <div className="stat muted hide-sm" title="Players in this district">👥 {online}</div>
       </div>
       <nav className="topbar-right" aria-label="Game menu">
+        {map === "unilag" && <button className="icon-btn label" onClick={() => set({ panel: "halls" })}>🏆<span>Halls</span></button>}
         <button className="icon-btn label" onClick={() => set({ panel: "activities" })}>🎯<span>Activities</span></button>
         <button className="icon-btn label" onClick={() => set({ panel: "profile" })}>👤<span>Profile</span></button>
         <button className="icon-btn label" onClick={() => set({ panel: "settings" })}>⚙️<span>Settings</span></button>
@@ -137,6 +145,39 @@ function ChallengeHud() {
   return (
     <div className="challenge-hud">
       <Meter value={c.progress} max={c.goal} label={`♻️ Clean-up drive ${c.progress}/${c.goal}`} />
+    </div>
+  );
+}
+
+function EventBanner() {
+  const event = useGame((s) => s.event);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!event) return;
+    const t = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, [event]);
+  if (!event) return null;
+  const left = Math.max(0, Math.ceil((event.endsAt - Date.now()) / 1000));
+  const dist = Math.round(Math.hypot(event.x - local.x, event.z - local.z));
+  const there = dist <= 7;
+  return (
+    <div className={`event-banner ${there ? "there" : ""}`} role="status">
+      <strong>🔔 {event.venue}</strong>
+      <span>{there ? "You're in class — stay here!" : `${dist} m away`}</span>
+      <span className="timer">{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</span>
+    </div>
+  );
+}
+
+function TravelOverlay() {
+  const traveling = useGame((s) => s.traveling);
+  if (!traveling) return null;
+  return (
+    <div className="travel" role="status" aria-live="polite">
+      <div className="travel-bus">🚌</div>
+      <p>{traveling === "unilag" ? "Danfo dey go Akoka… Unilag!" : "Danfo dey go Ozu District…"}</p>
+      <div className="spinner" />
     </div>
   );
 }
@@ -240,16 +281,26 @@ function Minimap() {
       const size = canvas.current!.width;
       const s = size / (WORLD_HALF * 2);
       const tx = (x: number) => (x + WORLD_HALF) * s, tz = (z: number) => (z + WORLD_HALF) * s;
-      c.fillStyle = "#2a2440";
+      const g = useGame.getState();
+      const map = getMap(g.map);
+      c.fillStyle = map.id === "unilag" ? "#2f4a33" : "#2a2440";
       c.fillRect(0, 0, size, size);
       c.fillStyle = "#3d6b7a";
-      c.fillRect(tx(WATER.x - WATER.w / 2), tz(WATER.z - WATER.d / 2), WATER.w * s, WATER.d * s + 10);
+      for (const w of map.water) c.fillRect(tx(w.x - w.w / 2), tz(w.z - w.d / 2), w.w * s, w.d * s);
       c.fillStyle = "#4a4560";
-      c.fillRect(0, tz(-27), size, 10 * s);
+      for (const r of map.roads) c.fillRect(tx(r.x - r.w / 2), tz(r.z - r.d / 2), r.w * s, r.d * s);
       c.fillStyle = "#8a7d6b";
-      for (const b of BUILDINGS) c.fillRect(tx(b.x - b.w / 2), tz(b.z - b.d / 2), b.w * s, b.d * s);
-      const g = useGame.getState();
-      for (const l of LOCATIONS) {
+      for (const b of map.buildings) c.fillRect(tx(b.x - b.w / 2), tz(b.z - b.d / 2), b.w * s, b.d * s);
+      c.fillStyle = "#f6c700";
+      for (const t of map.transit) c.fillRect(tx(t.x) - 3, tz(t.z) - 3, 6, 6);
+      if (g.event) {
+        c.strokeStyle = "#4fd39b";
+        c.lineWidth = 2;
+        c.beginPath();
+        c.arc(tx(g.event.x), tz(g.event.z), 6 + (Date.now() / 120) % 5, 0, Math.PI * 2);
+        c.stroke();
+      }
+      for (const l of map.locations) {
         const done = g.progress?.discovered.includes(l.id);
         c.fillStyle = done ? "#0e8a5f" : "#ff7a1a";
         c.beginPath();

@@ -22,8 +22,16 @@ Ozu is a multiplayer, Lagos-inspired social-life simulation that runs in the bro
   2. **Explore**: discover the 6 named places, with a bonus for completing all of them.
   3. **Community clean-up**: a shared district goal of 20 litter bags. Every contributor earns a bonus when the goal is reached.
 - **Progression**: coins (no real-world value), reputation, and 3 cosmetics that unlock by rep (Lekki Shades, Aso-oke Cap, Owambe Gold Chain). All of it persists.
-- **Safety**: 18+ gate and guidelines acceptance; report (with chat evidence), block, and mute; display-name and chat filtering (English, Pidgin, Yoruba and Igbo terms); rate limits with auto-mute; admin review, ban, and announcement API.
+- **Safety**: 16+ age gate and guidelines acceptance; report (with chat evidence), block, and mute; display-name and chat filtering (English, Pidgin, Yoruba and Igbo terms); rate limits with auto-mute; admin review, ban, and announcement API.
 - **Access**: keyboard, mouse, and touch (virtual joystick), adjustable camera, low/high graphics modes, captions for audio cues, reduced-motion support.
+
+## Unilag (Akoka) campus — v0.2
+
+- **Second district**: board the danfo at Danfo Park (or the Main Gate stop on campus) to travel between Ozu District and an original, recognisable take on the Akoka campus. It includes the Main Gate, Senate Building, Main Library, the Faculties of Arts, Science and Engineering, Jaja, Mariere, Kofo Ademola and Moremi halls, Lagoon Front, the Sports Centre, Love Garden and a campus buka.
+- **Hall rivalry**: players pick a hall (the choice can change once every 30 days). Everything earned on campus adds points to that hall, shown on a live leaderboard.
+- **Lecture rush**: every 4 minutes a lecture is announced at a random faculty. Players who reach the venue before the 75-second bell earn coins, rep and hall points.
+- **Verified students**: members who sign in with a `@live.unilag.edu.ng` or `@unilag.edu.ng` email get a 🎓 badge. This needs Supabase accounts to be enabled.
+- **Age policy 16+**: players choose an age group on entry, and under-16s are turned away. For under-18s, any report involving them is marked high priority and sorted to the top of the moderation queue. For everyone, phone numbers, links and @handles are hidden in chat.
 
 ## Run locally
 

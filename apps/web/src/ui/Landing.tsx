@@ -6,8 +6,8 @@ import { multiplayerConfigured } from "../net/client";
 import { Guidelines } from "./Panels";
 
 export function Landing() {
-  const { acceptedGuidelines, set, name } = useGame();
-  const [adult, setAdult] = useState(acceptedGuidelines);
+  const { acceptedGuidelines, set, name, ageGroup, setAgeGroup } = useGame();
+  const [age, setAge] = useState<"18+" | "16-17" | "under16" | null>(ageGroup);
   const [agree, setAgree] = useState(acceptedGuidelines);
   const [showRules, setShowRules] = useState(false);
   const [email, setEmail] = useState("");
@@ -19,6 +19,8 @@ export function Landing() {
   }, []);
 
   const enter = () => {
+    if (age !== "18+" && age !== "16-17") return;
+    setAgeGroup(age);
     persist.set("ozu.guidelines", true);
     set({ acceptedGuidelines: true, phase: "create" });
   };
@@ -40,10 +42,19 @@ export function Landing() {
         </p>
 
         <div className="card entry">
-          <label className="check">
-            <input type="checkbox" checked={adult} onChange={(e) => setAdult(e.target.checked)} />
-            <span>I am 18 or older.</span>
-          </label>
+          <fieldset className="age">
+            <legend>How old are you?</legend>
+            <div className="age-options">
+              {([["18+", "18 or older"], ["16-17", "16 or 17"], ["under16", "Under 16"]] as const).map(([v, label]) => (
+                <label key={v} className={`chip ${age === v ? "on" : ""}`}>
+                  <input type="radio" name="age" value={v} checked={age === v} onChange={() => setAge(v)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {age === "under16" && <p className="error small">Sorry — Ozu is for players aged 16 and over.</p>}
+            {age === "16-17" && <p className="muted small">Welcome! Players under 18 get extra safety protections.</p>}
+          </fieldset>
           <label className="check">
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
             <span>
@@ -51,7 +62,7 @@ export function Landing() {
               <button className="link" onClick={() => setShowRules(true)}>community guidelines</button>.
             </span>
           </label>
-          <button className="btn primary big" disabled={!adult || !agree} onClick={enter}>
+          <button className="btn primary big" disabled={!(age === "18+" || age === "16-17") || !agree} onClick={enter}>
             {name ? `Continue as ${name}` : "Enter Lagos"}
           </button>
 
@@ -90,8 +101,8 @@ export function Landing() {
 
       <section className="features">
         {[
-          ["Explore", "Plaza, buka, market row, Shrine Lounge, Danfo Park and the Lagoon Lookout."],
-          ["Meet people", "Walk up to anyone, say hello, chat and use emotes."],
+          ["Unilag is here", "Ride a danfo to Akoka. Rep your hall, race to lectures, hang out at Lagoon Front."],
+          ["Meet people", "Plaza, buka, Balogun Row, Shrine Lounge — walk up to anyone and say hello."],
           ["Do things together", "Community clean-up drives, exploration and greetings earn coins and rep."],
           ["Stay safe", "Report, block and mute at any time. Moderators review every report."],
         ].map(([h, p]) => (

@@ -1,17 +1,18 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { BUILDINGS, ROADS, WATER, type Building } from "@ozu/shared";
+import { MAPS, type Box, type Building, type MapId } from "@ozu/shared";
 import { asphalt, danfoSide, facade, grass, ground, paving, plazaTiles, signTexture } from "./textures";
 import { daylight, gameHour } from "./time";
+import { CampusScene } from "./Campus";
 
 /** Shared, mutable "night" amount (0 day … 1 night) written once per frame by <Lighting/>. */
 export const env = { night: 0 };
 
-const box = new THREE.BoxGeometry(1, 1, 1);
-const cyl = new THREE.CylinderGeometry(1, 1, 1, 16);
+export const box = new THREE.BoxGeometry(1, 1, 1);
+export const cyl = new THREE.CylinderGeometry(1, 1, 1, 16);
 
-const M = {
+export const M = {
   kerbA: new THREE.MeshStandardMaterial({ color: "#f6c700", roughness: 0.8 }),
   kerbB: new THREE.MeshStandardMaterial({ color: "#1a1a1a", roughness: 0.8 }),
   white: new THREE.MeshStandardMaterial({ color: "#eeeeee", roughness: 0.7 }),
@@ -30,11 +31,15 @@ const M = {
   brand: new THREE.MeshStandardMaterial({ color: "#ff7a1a", roughness: 0.35, metalness: 0.3, emissive: "#ff7a1a", emissiveIntensity: 0.1 }),
 };
 
-export function District({ quality }: { quality: "high" | "low" }) {
+const OZU = MAPS.ozu;
+const WATER = OZU.water[0];
+
+export function District({ quality, map }: { quality: "high" | "low"; map: MapId }) {
+  if (map === "unilag") return <CampusScene quality={quality} />;
   return (
     <group>
       <Ground />
-      {BUILDINGS.map((b) => <BuildingMesh key={b.id} b={b} />)}
+      {OZU.buildings.map((b) => <BuildingMesh key={b.id} b={b} />)}
       <Plaza />
       <StreetFurniture quality={quality} />
       <DanfoPark />
@@ -69,17 +74,25 @@ function Ground() {
         </mesh>
       ))}
       {/* Roads */}
-      {ROADS.map((r, i) => (
+      <Roads roads={OZU.roads} />
+      <LaneMarkings />
+    </group>
+  );
+}
+
+export function Roads({ roads }: { roads: Box[] }) {
+  return (
+    <>
+      {roads.map((r, i) => (
         <group key={i}>
           <mesh rotation-x={-Math.PI / 2} position={[r.x, 0.03, r.z]} receiveShadow>
             <planeGeometry args={[r.w, r.d]} />
-            <meshStandardMaterial map={asphalt(Math.round(r.w / 8), Math.round(r.d / 8))} roughness={0.9} />
+            <meshStandardMaterial map={asphalt(Math.max(1, Math.round(r.w / 8)), Math.max(1, Math.round(r.d / 8)))} roughness={0.9} />
           </mesh>
           <Kerbs r={r} />
         </group>
       ))}
-      <LaneMarkings />
-    </group>
+    </>
   );
 }
 
@@ -110,17 +123,20 @@ function LaneMarkings() {
   return <group>{dashes}{zebra}</group>;
 }
 
-function BuildingMesh({ b }: { b: Building }) {
+export function BuildingMesh({ b: raw }: { b: Building }) {
+  // Footprints are stored in world axes; when the frontage is turned 90° the local width/depth swap.
+  const b = useMemo(() => (Math.abs(Math.sin(raw.facing)) > 0.5 ? { ...raw, w: raw.d, d: raw.w } : raw), [raw]);
+  const look = b.kind === "hall" ? "residential" : b.kind === "faculty" || b.kind === "tower" ? "office" : b.kind;
   const floorH = 3;
   const floors = Math.max(1, Math.round(b.h / floorH));
   const [map, em] = useMemo(() => {
     const cols = Math.max(2, Math.round(b.w / 3));
-    return facade(b.id, b.color, cols, floors, b.kind);
-  }, [b, floors]);
+    return facade(b.id, b.color, cols, floors, look);
+  }, [b, floors, look]);
   const sideMaps = useMemo(() => {
     const cols = Math.max(2, Math.round(b.d / 3));
-    return facade(b.id + "-side", b.color, cols, floors, b.kind);
-  }, [b, floors]);
+    return facade(b.id + "-side", b.color, cols, floors, look);
+  }, [b, floors, look]);
   const mats = useMemo(() => {
     const front = new THREE.MeshStandardMaterial({ map, emissiveMap: em, emissive: new THREE.Color("#ffffff"), emissiveIntensity: 0, roughness: 0.85 });
     const side = new THREE.MeshStandardMaterial({ map: sideMaps[0], emissiveMap: sideMaps[1], emissive: new THREE.Color("#ffffff"), emissiveIntensity: 0, roughness: 0.85 });
@@ -138,7 +154,7 @@ function BuildingMesh({ b }: { b: Building }) {
 
   const shopfront = b.kind === "shop" || b.kind === "food" || b.kind === "kiosk";
   const sign = b.sign ? signTexture(b.sign, b.signColor ?? "#1b1240") : null;
-  const hasTank = b.kind === "residential" || b.kind === "shop" || b.kind === "food";
+  const hasTank = b.kind === "residential" || b.kind === "shop" || b.kind === "food" || b.kind === "hall";
 
   if (b.kind === "transport") {
     return (
@@ -213,6 +229,49 @@ function BuildingMesh({ b }: { b: Building }) {
           <mesh geometry={box} material={M.brand} position={[0, 3.2, 0.2]} scale={[5, 0.12, 0.3]} />
         </group>
       )}
+      {b.kind === "hall" && (
+        <group position={[0, 0, b.d / 2]}>
+          {/* Coloured hall band and entrance canopy */}
+          <mesh geometry={box} position={[0, 3.2, 0.06]} scale={[b.w, 0.35, 0.1]}>
+            <meshStandardMaterial color={b.signColor ?? "#2a3d8f"} roughness={0.6} />
+          </mesh>
+          <mesh geometry={box} material={M.stone} position={[0, 2.8, 1]} scale={[4.5, 0.2, 2]} castShadow />
+          {[-2, 2].map((x) => <mesh key={x} geometry={cyl} material={M.stone} position={[x, 1.4, 1.8]} scale={[0.15, 2.8, 0.15]} />)}
+          {sign && (
+            <mesh position={[0, 4.1, 0.08]}>
+              <planeGeometry args={[Math.min(b.w * 0.9, 8), Math.min(b.w * 0.9, 8) / 4]} />
+              <meshStandardMaterial map={sign} roughness={0.6} />
+            </mesh>
+          )}
+        </group>
+      )}
+      {(b.kind === "faculty" || b.kind === "tower") && (
+        <group position={[0, 0, b.d / 2]}>
+          {/* Columned portico — the classic Nigerian campus entrance */}
+          <mesh geometry={box} material={M.stone} position={[0, 4.2, 1.6]} scale={[Math.min(b.w * 0.7, 9), 0.35, 3.2]} castShadow />
+          {[-1, -0.33, 0.33, 1].map((f) => (
+            <mesh key={f} geometry={cyl} material={M.stone} position={[f * Math.min(b.w * 0.7, 9) * 0.45, 2.1, 3]} scale={[0.22, 4.2, 0.22]} castShadow />
+          ))}
+          {[0, 1, 2].map((i) => <mesh key={i} geometry={box} material={M.stone} position={[0, 0.1 + i * 0.12, 3.6 + i * -0.35]} scale={[Math.min(b.w * 0.7, 9), 0.12, 1]} receiveShadow />)}
+          {sign && (
+            <mesh position={[0, 5.1, 0.08]}>
+              <planeGeometry args={[Math.min(b.w * 0.85, 10), Math.min(b.w * 0.85, 10) / 4]} />
+              <meshStandardMaterial map={sign} roughness={0.6} />
+            </mesh>
+          )}
+        </group>
+      )}
+      {b.kind === "tower" && (
+        <group>
+          {/* Vertical fins and crown */}
+          {[-1, 1].map((sx) => (
+            <mesh key={sx} geometry={box} material={M.stone} position={[sx * (b.w / 2 + 0.2), b.h / 2, b.d / 2 - 1]} scale={[0.5, b.h, 1.2]} castShadow />
+          ))}
+          <mesh geometry={box} position={[0, b.h + 1.4, 0]} scale={[b.w * 0.6, 2.2, b.d * 0.6]} castShadow>
+            <meshStandardMaterial color={b.signColor ?? "#7a1f3d"} roughness={0.5} />
+          </mesh>
+        </group>
+      )}
       {(b.kind === "office") && sign && (
         <mesh position={[0, b.h - 1.2, b.d / 2 + 0.05]}>
           <planeGeometry args={[6, 1.5]} />
@@ -264,7 +323,7 @@ function Plaza() {
   );
 }
 
-function PalmTree({ position, s = 1 }: { position: [number, number, number]; s?: number }) {
+export function PalmTree({ position, s = 1 }: { position: [number, number, number]; s?: number }) {
   const fronds = useMemo(() => {
     const g = new THREE.PlaneGeometry(0.7, 3.2, 1, 6);
     const pos = g.attributes.position;

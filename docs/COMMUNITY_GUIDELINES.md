@@ -3,8 +3,8 @@
 Ozu is a shared space. Everyone here should feel welcome and safe.
 
 1. **Respect people.** No harassment, bullying, threats, or hate based on ethnicity, tribe, religion, gender, sexuality or disability.
-2. **Keep it adult-appropriate.** No sexual content or solicitation. Ozu is for players aged 18+.
-3. **Protect privacy.** Never share anyone's real address, phone number, account details or location, including your own.
+2. **Keep it clean.** No sexual content or solicitation. Ozu is for players aged 16+, and players under 18 get extra protections. Adults must never pressure younger players to move a conversation off Ozu.
+3. **Protect privacy.** Never share anyone's real address, phone number, social handles, account details or location, including your own. Ozu hides phone numbers and links in chat automatically.
 4. **No scams or spam.** No selling, phishing, "send me money" schemes, or flooding chat.
 5. **Play fair.** Don't exploit bugs or use tools to cheat activities or rewards.
 6. **Don't impersonate.** No pretending to be staff, moderators or real people.

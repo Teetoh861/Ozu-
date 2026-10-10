@@ -6,10 +6,12 @@ import { camState, useGame } from "../state/store";
 import { District } from "./District";
 import { Lighting } from "./Lighting";
 import { LocalPlayer, RemotePlayers, useBubbleSweep } from "./Players";
-import { ChallengeItems, LocationMarkers, NPCs } from "./Activities";
+import { LabelProjector } from "./labels";
+import { ChallengeItems, EventMarker, LocationMarkers, NPCs } from "./Activities";
 
 export function GameCanvas() {
   const quality = useGame((s) => s.settings.quality);
+  const map = useGame((s) => s.map);
   const high = quality === "high";
   useBubbleSweep();
   useCameraControls();
@@ -30,12 +32,14 @@ export function GameCanvas() {
     >
       <Suspense fallback={null}>
         <Lighting shadows={high} />
-        <District quality={quality} />
-        <LocationMarkers />
+        <District quality={quality} map={map} />
+        <LocationMarkers key={`m-${map}`} />
+        <EventMarker />
         <ChallengeItems />
-        <NPCs count={high ? 14 : 6} />
+        <NPCs key={`n-${map}`} map={map} count={high ? 14 : 6} />
         <RemotePlayers />
         <LocalPlayer />
+        <LabelProjector />
       </Suspense>
       <AdaptiveDpr pixelated />
     </Canvas>

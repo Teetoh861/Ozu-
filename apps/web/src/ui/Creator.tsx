@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import {
-  BODIES, HAIRSTYLES, HAIR_LABELS, OUTFITS, OUTFIT_LABELS, OUTFIT_PALETTES, SKIN_TONES, validateDisplayName, type Avatar,
+  BODIES, HALLS, HAIRSTYLES, HAIR_LABELS, OUTFITS, OUTFIT_LABELS, OUTFIT_PALETTES, SKIN_TONES, validateDisplayName, type Avatar,
 } from "@ozu/shared";
 import { useGame } from "../state/store";
 import { Logo } from "../App";
@@ -11,6 +11,7 @@ export function Creator() {
   const g = useGame();
   const [avatar, setAvatar] = useState<Avatar>(g.avatar);
   const [name, setName] = useState(g.name);
+  const [hall, setHall] = useState<string | null>(g.hall);
   const check = validateDisplayName(name);
   const patch = (p: Partial<Avatar>) => setAvatar((a) => ({ ...a, ...p }));
 
@@ -26,7 +27,7 @@ export function Creator() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!check.ok) return;
-    g.setProfile(check.name, avatar);
+    g.setProfile(check.name, avatar, hall);
     g.set({ phase: "playing" });
   };
 
@@ -77,6 +78,16 @@ export function Creator() {
                 style={{ background: `linear-gradient(135deg, ${p[0]} 0 45%, ${p[1]} 45% 70%, ${p[2]} 70%)` }} />
             ))}
           </Group>
+
+          <Group label="Unilag hall (optional)">
+            <Chip on={hall === null} onClick={() => setHall(null)}>Not a student</Chip>
+            {HALLS.map((h) => (
+              <Chip key={h.id} on={hall === h.id} onClick={() => setHall(h.id)}>
+                <span className="hall-dot" style={{ background: h.color }} /> {h.name}
+              </Chip>
+            ))}
+          </Group>
+          <p className="muted small hall-note">Rep your hall: everything you earn on campus counts toward the hall leaderboard. You can switch hall once every 30 days.</p>
 
           <button className="btn primary big" disabled={!check.ok}>Enter the district</button>
         </form>

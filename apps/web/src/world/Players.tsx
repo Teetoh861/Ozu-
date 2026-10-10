@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import { useShallow } from "zustand/react/shallow";
 import {
-  INTERACT_RANGE, LOCATIONS, PICKUP_RANGE, RUN_SPEED, WALK_SPEED, DISCOVER_RANGE, resolveMove, type Anim,
+  INTERACT_RANGE, PICKUP_RANGE, RUN_SPEED, TRANSIT_RANGE, WALK_SPEED, DISCOVER_RANGE, getMap, resolveMove, type Anim,
 } from "@ozu/shared";
 import { camState, input, local, useGame, type Remote } from "../state/store";
 import { client } from "../net/client";
 import { Character, type Motion } from "./Character";
+import { playerPositions } from "./labels";
 
 const EMOTE_ANIMS: Anim[] = ["wave", "dance", "clap"];
 export const emoteState = { until: 0, anim: "idle" as Anim };
+
+// `?debug` exposes client-side camera/position state for automated QA. The server stays authoritative.
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("debug")) {
+  (window as unknown as { __ozu: unknown }).__ozu = { camState, local, input };
+}
 
 export function playEmote(anim: Anim) {
   emoteState.anim = anim;
@@ -24,6 +29,8 @@ export function playEmote(anim: Anim) {
 export function LocalPlayer() {
   const avatar = useGame((s) => s.avatar);
   const equipped = useGame((s) => s.progress?.equipped ?? null);
+  const mapId = useGame((s) => s.map);
+  const map = getMap(mapId);
   const group = useRef<THREE.Group>(null!);
   const motion = useRef<Motion>({ anim: "idle", speed: 0 });
   const { camera } = useThree();
@@ -54,7 +61,7 @@ export function LocalPlayer() {
       const dx = (-iz * fx + ix * -fz) / len;
       const dz = (-iz * fz + ix * fx) / len;
       speed = (running ? RUN_SPEED : WALK_SPEED) * (input.joyX || input.joyY ? Math.max(0.35, mag) : 1);
-      const [nx, nz] = resolveMove(local.x, local.z, local.x - dx * speed * dt, local.z - dz * speed * dt);
+      const [nx, nz] = resolveMove(map, local.x, local.z, local.x - dx * speed * dt, local.z - dz * speed * dt);
       const moved = Math.hypot(nx - local.x, nz - local.z);
       local.x = nx;
       local.z = nz;
@@ -91,17 +98,18 @@ export function LocalPlayer() {
       const d = Math.hypot(p.x - local.x, p.z - local.z);
       if (d < nd) { nd = d; nearest = p; }
     }
-    const nextPrompt = nearest
-      ? { label: `Greet ${nearest.name}`, id: nearest.id }
-      : null;
-    if ((nextPrompt?.label ?? null) !== (g.prompt?.label ?? null)) {
-      g.set({
-        prompt: nextPrompt ? { label: nextPrompt.label, action: () => { client.send({ t: "greet", targetId: nextPrompt.id }); emoteState.anim = "wave"; emoteState.until = performance.now() + 2000; } } : null,
-      });
+    const stop = map.transit.find((t) => Math.hypot(t.x - local.x, t.z - local.z) < TRANSIT_RANGE);
+    let next: { label: string; action: () => void } | null = null;
+    if (nearest) {
+      const id = nearest.id;
+      next = { label: `Greet ${nearest.name}`, action: () => { client.send({ t: "greet", targetId: id }); emoteState.anim = "wave"; emoteState.until = performance.now() + 2000; } };
+    } else if (stop && !g.traveling) {
+      next = { label: `🚌 ${stop.label}`, action: () => client.travel(stop.to) };
     }
+    if ((next?.label ?? null) !== (g.prompt?.label ?? null)) g.set({ prompt: next });
 
     if (!client.online) return;
-    for (const loc of LOCATIONS) {
+    for (const loc of map.locations) {
       if (g.progress?.discovered.includes(loc.id) || pendingDiscover.current.has(loc.id)) continue;
       if (Math.hypot(loc.x - local.x, loc.z - local.z) < DISCOVER_RANGE) {
         pendingDiscover.current.add(loc.id);
@@ -138,14 +146,15 @@ export function RemotePlayers() {
 function RemotePlayer({ id }: { id: string }) {
   const avatar = useGame((s) => s.players[id]?.avatar);
   const equipped = useGame((s) => s.players[id]?.equipped ?? null);
-  const name = useGame((s) => s.players[id]?.name ?? "");
-  const rep = useGame((s) => s.players[id]?.rep ?? 0);
-  const bubble = useGame((s) => s.players[id]?.bubble);
-  const showNames = useGame((s) => s.settings.showNames);
   const group = useRef<THREE.Group>(null!);
   const motion = useRef<Motion>({ anim: "idle", speed: 0 });
   const init = useRef(false);
-  const tag = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    playerPositions.set(id, group.current.position);
+    return () => {
+      playerPositions.delete(id);
+    };
+  }, [id]);
 
   useFrame((_, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05);
@@ -171,32 +180,12 @@ function RemotePlayer({ id }: { id: string }) {
     const emoting = p.emoteUntil && Date.now() < p.emoteUntil;
     motion.current.anim = emoting ? p.anim : EMOTE_ANIMS.includes(p.anim) ? "idle" : p.anim;
     motion.current.speed = Math.hypot(g.position.x - ox, g.position.z - oz) / dt;
-    if (tag.current) tag.current.style.display = Math.hypot(g.position.x - local.x, g.position.z - local.z) < 35 ? "" : "none";
   });
 
   if (!avatar) return null;
-  const showBubble = bubble && bubble.until > Date.now();
   return (
     <group ref={group}>
       <Character avatar={avatar} equipped={equipped} motion={motion} />
-      {(showNames || showBubble) && (
-        <Html ref={tag} position={[0, 2.15, 0]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-          <div className="tag">
-            {showBubble && <div className="bubble">{bubble!.text}</div>}
-            {showNames && (
-              <button
-                className="nametag"
-                style={{ pointerEvents: "auto" }}
-                onClick={() => useGame.getState().set({ selectedPlayer: id, panel: "player" })}
-                aria-label={`Open player card for ${name}`}
-              >
-                {name}
-                <span className="rep">★ {rep}</span>
-              </button>
-            )}
-          </div>
-        </Html>
-      )}
     </group>
   );
 }
